@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# Firefox extension packaging
+*.xpi
+*.zip
+web-ext-artifacts/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node (if we ever add build tools)
+node_modules/
+package-lock.json

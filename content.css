@@ -1,0 +1,234 @@
+/* ===================================================================
+   AI Conversation Navigator — Content Script Styles
+   Works in both regular tabs and sidebar iframe context
+   =================================================================== */
+
+/* === TOGGLE BUTTON (hover-expand) === */
+#ai-nav-toggle {
+    position: fixed !important;
+    right: 0 !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    z-index: 2147483647 !important;
+    color: white !important;
+    border: none !important;
+    padding: 10px 8px !important;
+    cursor: pointer !important;
+    border-radius: 8px 0 0 8px !important;
+    font-size: 16px !important;
+    box-shadow: -2px 0 10px rgba(0,0,0,0.3) !important;
+    transition: all 0.25s ease !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    line-height: 1 !important;
+}
+
+/* Expand text hidden by default */
+#ai-nav-toggle .ai-nav-expand-text {
+    max-width: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    margin-left: 0 !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* Show text on hover */
+#ai-nav-toggle:hover .ai-nav-expand-text {
+    max-width: 80px !important;
+    opacity: 1 !important;
+    margin-left: 8px !important;
+}
+
+#ai-nav-toggle:hover {
+    padding-right: 14px !important;
+}
+
+#ai-nav-toggle.open {
+    right: 280px !important;
+}
+
+/* === NAVIGATION PANEL === */
+#ai-nav-panel {
+    position: fixed !important;
+    right: -280px !important;
+    top: 0 !important;
+    width: 280px !important;
+    height: 100vh !important;
+    background: #1a1a1a !important;
+    border-left: 1px solid #333 !important;
+    z-index: 2147483646 !important;
+    transition: right 0.3s ease !important;
+    display: flex !important;
+    flex-direction: column !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+#ai-nav-panel.open {
+    right: 0 !important;
+}
+
+/* Panel header */
+#ai-nav-header {
+    padding: 12px !important;
+    background: #252525 !important;
+    border-bottom: 1px solid #333 !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    flex-shrink: 0 !important;
+}
+
+#ai-nav-header h3 {
+    margin: 0 !important;
+    color: #fff !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+}
+
+#ai-nav-refresh {
+    background: #333 !important;
+    border: none !important;
+    color: #aaa !important;
+    padding: 5px 10px !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    font-size: 11px !important;
+    font-family: inherit !important;
+}
+
+#ai-nav-refresh:hover {
+    background: #444 !important;
+    color: #fff !important;
+}
+
+/* Stats bar */
+#ai-nav-stats {
+    padding: 8px 12px !important;
+    background: #202020 !important;
+    border-bottom: 1px solid #333 !important;
+    color: #888 !important;
+    font-size: 11px !important;
+    flex-shrink: 0 !important;
+}
+
+/* Message list */
+#ai-nav-list {
+    flex: 1 !important;
+    overflow-y: auto !important;
+    padding: 6px !important;
+}
+
+/* Individual nav items */
+.ai-nav-item {
+    padding: 10px !important;
+    margin-bottom: 4px !important;
+    background: #252525 !important;
+    border-radius: 6px !important;
+    cursor: pointer !important;
+    border-left: 3px solid #d97706 !important;
+    transition: all 0.15s ease !important;
+}
+
+.ai-nav-item:hover {
+    background: #303030 !important;
+}
+
+.ai-nav-number {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    margin-bottom: 3px !important;
+    display: block !important;
+}
+
+.ai-nav-text {
+    color: #ccc !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+}
+
+/* Empty state */
+#ai-nav-empty {
+    padding: 20px !important;
+    text-align: center !important;
+    color: #666 !important;
+    font-size: 12px !important;
+    line-height: 1.6 !important;
+}
+
+/* Highlight animation when scrolling to a message */
+@keyframes ai-nav-highlight {
+    0% { outline: 3px solid #d97706; outline-offset: 4px; }
+    100% { outline: 3px solid transparent; outline-offset: 4px; }
+}
+
+.ai-nav-highlight {
+    animation: ai-nav-highlight 2s ease-out !important;
+}
+
+/* === SIDEBAR-SPECIFIC OVERRIDES === */
+/* When running inside our extension's sidebar iframe, space is tight */
+
+/* Fixed-width panel that works consistently across all AI sites */
+.ai-nav-in-sidebar #ai-nav-panel {
+    width: 280px !important;
+    right: -280px !important;
+}
+
+.ai-nav-in-sidebar #ai-nav-panel.open {
+    right: 0 !important;
+}
+
+/* Toggle button stays glued to the panel edge */
+.ai-nav-in-sidebar #ai-nav-toggle {
+    padding: 8px 6px !important;
+    font-size: 14px !important;
+}
+
+.ai-nav-in-sidebar #ai-nav-toggle.open {
+    right: 280px !important;
+}
+
+/* Compact nav items in sidebar */
+.ai-nav-in-sidebar .ai-nav-item {
+    padding: 8px !important;
+    margin-bottom: 3px !important;
+}
+
+.ai-nav-in-sidebar .ai-nav-text {
+    font-size: 11px !important;
+    -webkit-line-clamp: 2 !important;
+}
+
+.ai-nav-in-sidebar #ai-nav-header {
+    padding: 8px 10px !important;
+}
+
+.ai-nav-in-sidebar #ai-nav-header h3 {
+    font-size: 12px !important;
+}
+
+.ai-nav-in-sidebar #ai-nav-refresh {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+}
+
+.ai-nav-in-sidebar #ai-nav-stats {
+    padding: 6px 10px !important;
+    font-size: 10px !important;
+}
