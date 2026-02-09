@@ -2,6 +2,10 @@
 
 A Firefox extension that puts Claude, ChatGPT, Grok, and Gemini in your sidebar with a built-in conversation navigator. Quickly jump to any question in long AI conversations without scrolling.
 
+I love firefox web browser's AI sidebar feature. Almost to a point it has became my primary interaction with those chat AI models, because I love being able to have them up on my side screen and look up something else it is referring to, follow guidelines it provided, multitask, or do something else as I am waiting for its response. Original plan was to just add the chat history navigate button we have created in another project, but I ran into challenges as it is firefox's own feature and it was hard to inject our separate code into it. So I just made a new extension. 
+
+Right now, I am still working on some bugs and fixes, and when I deem it is up to my own standard, I will eventually turn this into real extension, not temporary add in as it is now. I do wonder if there would be easier way to do this all across different web browsers, because if I make it into extension, then people have to download it separately for firefox, chrome, safari, and others, so maybe there is better way. Maybe a program that could run all across differnet platforms, web browsers, or an application, or maybe a whole browser.. who knows. Anyway, stay tuned. 
+
 ## What It Does
 
 - **Multi-AI Sidebar** — Switch between Claude, ChatGPT, Grok, and Gemini from a tabbed sidebar panel
