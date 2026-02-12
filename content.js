@@ -134,25 +134,39 @@
         let messages = [];
 
         if (currentSite === SITE.CLAUDE) {
-            messages = document.querySelectorAll('[data-testid="user-human-turn"]');
+            // Primary: current data-testid attribute for user messages
+            messages = document.querySelectorAll('[data-testid="user-message"]');
+            // Fallback: class-based selector used in some Claude UI versions
+            if (messages.length === 0) {
+                messages = document.querySelectorAll('.font-user-message');
+            }
+            // Fallback: older indexed data-testid (user-human-turn-0, user-human-turn-1, etc.)
+            if (messages.length === 0) {
+                messages = document.querySelectorAll('[data-testid^="user-human-turn"]');
+            }
         }
         else if (currentSite === SITE.CHATGPT) {
             messages = document.querySelectorAll('[data-message-author-role="user"]');
         }
         else if (currentSite === SITE.GROK) {
-            const allBubbles = document.querySelectorAll('div.message-bubble');
-            messages = [];
-            allBubbles.forEach(function(bubble) {
-                const container = bubble.closest('[class*="message"]');
-                if (container) {
-                    const isBot = container.querySelector('[class*="bot"]') ||
-                                  container.querySelector('[class*="assistant"]') ||
-                                  container.querySelector('[class*="grok"]');
-                    if (!isBot) messages.push(bubble);
-                } else {
-                    messages.push(bubble);
-                }
-            });
+            // Primary: Grok uses Tailwind classes — user messages have items-end alignment
+            messages = document.querySelectorAll('div.message-row.items-end');
+            // Fallback: try broader message-row detection if Tailwind classes change
+            if (messages.length === 0) {
+                var allRows = document.querySelectorAll('div.message-row');
+                var userRows = [];
+                allRows.forEach(function(row) {
+                    // User messages are right-aligned (items-end) or lack bot indicators
+                    if (!row.classList.contains('items-start')) {
+                        userRows.push(row);
+                    }
+                });
+                if (userRows.length > 0) messages = userRows;
+            }
+            // Fallback: older message-bubble selector
+            if (messages.length === 0) {
+                messages = document.querySelectorAll('div.message-bubble');
+            }
         }
         else if (currentSite === SITE.GEMINI) {
             messages = document.querySelectorAll('div.query-text');
@@ -368,12 +382,34 @@
             var nav = document.querySelector('nav[data-testid="menu-sidebar"]');
             if (nav) return nav;
 
-            // Fallback: look for a nav element on the left side
+            // Fallback: other data-testid patterns Claude may use
+            nav = document.querySelector('[data-testid*="sidebar"]');
+            if (nav && (nav.tagName === 'NAV' || nav.tagName === 'ASIDE' || nav.querySelector('a'))) return nav;
+
+            // Fallback: aside elements used as sidebar
+            var asides = document.querySelectorAll('aside');
+            for (var i = 0; i < asides.length; i++) {
+                var rect = asides[i].getBoundingClientRect();
+                if (rect.height > 200 && rect.left <= 10) {
+                    return asides[i];
+                }
+            }
+
+            // Fallback: nav element on the left side
             var navs = document.querySelectorAll('nav');
             for (var i = 0; i < navs.length; i++) {
                 var rect = navs[i].getBoundingClientRect();
                 if (rect.height > 200 && rect.left <= 10) {
                     return navs[i];
+                }
+            }
+
+            // Fallback: any element with role="navigation" on the left
+            var roleNavs = document.querySelectorAll('[role="navigation"]');
+            for (var i = 0; i < roleNavs.length; i++) {
+                var rect = roleNavs[i].getBoundingClientRect();
+                if (rect.height > 200 && rect.left <= 10) {
+                    return roleNavs[i];
                 }
             }
 
