@@ -271,37 +271,5 @@
     border-color: #777 !important;
 }
 
-/* Semi-transparent overlay behind sidebar when open */
-#ai-claude-sidebar-overlay {
-    position: fixed !important;
-    inset: 0 !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-    z-index: 2147483639 !important;
-    display: none;
-    cursor: pointer !important;
-}
-
-#ai-claude-sidebar-overlay.visible {
-    display: block !important;
-}
-
-/* Force Claude's nav sidebar to overlay when toggled open */
-.ai-sidebar-forced-open {
-    transform: translateX(0) !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    z-index: 2147483640 !important;
-    pointer-events: auto !important;
-    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5) !important;
-    position: fixed !important;
-    left: 0 !important;
-    top: 0 !important;
-    height: 100vh !important;
-}
-
-/* Also force inner children visible (Claude nests fixed containers) */
-.ai-sidebar-forced-open > div {
-    transform: translateX(0) !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-}
+/* Overlay and forced-open styles removed — we now click Claude's own
+   sidebar toggle button instead of manually manipulating the DOM. */
