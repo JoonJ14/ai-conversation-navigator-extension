@@ -381,86 +381,78 @@
         // ☰ button to click Claude's native toggle instead of trying to
         // force a nonexistent nav element visible via CSS.
 
-        function getClaudeMenuButton() {
-            return document.querySelector('button[aria-label="Toggle menu"]');
-        }
-
-        // DEBUG: Click the "Toggle menu" button and report what changes.
-        // This will show a visible overlay with results. Remove after debugging.
-        function clickAndDiagnose() {
-            var menuBtn = getClaudeMenuButton();
+        // DEBUG: Dump ALL buttons + clickable elements in the top area
+        // to find the real sidebar/conversation-list toggle.
+        function dumpAllButtons() {
             var info = [];
+            info.push('=== ALL BUTTONS (sorted by position) ===');
+            info.push('viewport: ' + window.innerWidth + 'x' + window.innerHeight);
+            info.push('');
 
-            if (!menuBtn) {
-                info.push('button[aria-label="Toggle menu"] NOT FOUND');
-                // List all buttons with aria-labels
-                var allBtns = document.querySelectorAll('button');
-                info.push('All buttons with aria-label:');
-                for (var i = 0; i < allBtns.length; i++) {
-                    var al = allBtns[i].getAttribute('aria-label');
-                    if (al) {
-                        var r = allBtns[i].getBoundingClientRect();
-                        info.push('  "' + al + '" pos=' + Math.round(r.left) + ',' + Math.round(r.top) + ' size=' + Math.round(r.width) + 'x' + Math.round(r.height));
-                    }
+            var allBtns = document.querySelectorAll('button');
+            var btnData = [];
+            for (var i = 0; i < allBtns.length; i++) {
+                var b = allBtns[i];
+                var r = b.getBoundingClientRect();
+                if (r.width === 0 && r.height === 0) continue; // skip hidden
+                var svgPaths = b.querySelectorAll('svg path');
+                var pathD = '';
+                if (svgPaths.length > 0) {
+                    pathD = (svgPaths[0].getAttribute('d') || '').substring(0, 60);
                 }
-                showDebug(info);
-                return;
+                btnData.push({
+                    el: b,
+                    x: Math.round(r.left),
+                    y: Math.round(r.top),
+                    w: Math.round(r.width),
+                    h: Math.round(r.height),
+                    text: (b.textContent || '').trim().substring(0, 25),
+                    aria: b.getAttribute('aria-label') || '',
+                    id: b.id || '',
+                    cls: (b.className || '').substring(0, 50),
+                    pathD: pathD,
+                    parentTag: b.parentElement ? b.parentElement.tagName : '?',
+                    parentCls: b.parentElement ? (b.parentElement.className || '').substring(0, 30) : ''
+                });
             }
 
-            // Show button info before click
-            var r = menuBtn.getBoundingClientRect();
-            var cs = window.getComputedStyle(menuBtn);
-            info.push('BEFORE CLICK:');
-            info.push('button[aria-label="Toggle menu"]');
-            info.push('  pos: ' + Math.round(r.left) + ',' + Math.round(r.top) + ' size: ' + Math.round(r.width) + 'x' + Math.round(r.height));
-            info.push('  display: ' + cs.display + ' visibility: ' + cs.visibility + ' opacity: ' + cs.opacity);
-            info.push('  parent: ' + menuBtn.parentElement.tagName + '.' + (menuBtn.parentElement.className || '').substring(0, 40));
+            // Sort by Y then X position (top-left first)
+            btnData.sort(function(a, b) {
+                return a.y === b.y ? a.x - b.x : a.y - b.y;
+            });
 
-            // Snapshot DOM state before click
-            var beforeHTML = document.body.innerHTML.length;
-            var beforeNavs = document.querySelectorAll('nav').length;
-            var beforeLinks = document.querySelectorAll('a').length;
-
-            // Click it
-            menuBtn.click();
-            info.push('');
-            info.push('CLICKED! Waiting 800ms...');
-
-            setTimeout(function() {
-                var afterNavs = document.querySelectorAll('nav').length;
-                var afterLinks = document.querySelectorAll('a').length;
-                var afterHTML = document.body.innerHTML.length;
-
+            for (var i = 0; i < btnData.length; i++) {
+                var d = btnData[i];
+                info.push('btn[' + i + ']: pos=' + d.x + ',' + d.y + ' size=' + d.w + 'x' + d.h);
+                info.push('  text="' + d.text + '" aria="' + d.aria + '"');
+                info.push('  id="' + d.id + '" cls="' + d.cls + '"');
+                info.push('  parent: ' + d.parentTag + '.' + d.parentCls);
+                if (d.pathD) {
+                    info.push('  svg path d="' + d.pathD + '"');
+                }
                 info.push('');
-                info.push('AFTER CLICK:');
-                info.push('  nav elements: ' + beforeNavs + ' -> ' + afterNavs);
-                info.push('  <a> links: ' + beforeLinks + ' -> ' + afterLinks);
-                info.push('  HTML size: ' + beforeHTML + ' -> ' + afterHTML + ' (diff: ' + (afterHTML - beforeHTML) + ')');
+            }
 
-                // Check for new nav elements
-                var navs = document.querySelectorAll('nav');
-                for (var i = 0; i < navs.length; i++) {
-                    var nr = navs[i].getBoundingClientRect();
-                    info.push('  nav[' + i + ']: cls="' + navs[i].className.substring(0, 50) + '" size=' + Math.round(nr.width) + 'x' + Math.round(nr.height));
-                }
+            // Also list any <a> links
+            var links = document.querySelectorAll('a');
+            info.push('=== LINKS (' + links.length + ') ===');
+            for (var i = 0; i < links.length && i < 15; i++) {
+                var a = links[i];
+                var r = a.getBoundingClientRect();
+                info.push('a[' + i + ']: pos=' + Math.round(r.left) + ',' + Math.round(r.top) + ' href="' + (a.getAttribute('href') || '').substring(0, 40) + '" text="' + (a.textContent || '').trim().substring(0, 30) + '"');
+            }
 
-                // Check for new links (conversation items)
-                var links = document.querySelectorAll('a');
-                info.push('  Links found (' + links.length + '):');
-                for (var i = 0; i < links.length && i < 10; i++) {
-                    info.push('    a[' + i + ']: href="' + (links[i].getAttribute('href') || '').substring(0, 40) + '" text="' + (links[i].textContent || '').trim().substring(0, 30) + '"');
-                }
+            // Also look for nav, aside, drawer-type elements
+            var specials = document.querySelectorAll('nav, aside, [role="dialog"], [role="menu"], [role="navigation"]');
+            info.push('');
+            info.push('=== NAV/ASIDE/DIALOG (' + specials.length + ') ===');
+            for (var i = 0; i < specials.length; i++) {
+                var s = specials[i];
+                var r = s.getBoundingClientRect();
+                info.push(s.tagName + '[role=' + (s.getAttribute('role') || '') + ']: pos=' + Math.round(r.left) + ',' + Math.round(r.top) + ' size=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' cls="' + (s.className || '').substring(0, 40) + '"');
+            }
 
-                // Check for any new role=dialog, role=menu, or drawer-like elements
-                var dialogs = document.querySelectorAll('[role="dialog"], [role="menu"], [role="navigation"]');
-                info.push('  Dialogs/menus/navigation: ' + dialogs.length);
-                for (var i = 0; i < dialogs.length; i++) {
-                    var dr = dialogs[i].getBoundingClientRect();
-                    info.push('    ' + dialogs[i].tagName + '[role=' + dialogs[i].getAttribute('role') + '] cls="' + dialogs[i].className.substring(0, 40) + '" size=' + Math.round(dr.width) + 'x' + Math.round(dr.height));
-                }
-
-                showDebug(info);
-            }, 800);
+            showDebug(info);
         }
 
         function showDebug(info) {
@@ -488,7 +480,7 @@
                 onClick: function(e) {
                     e.stopPropagation();
                     e.preventDefault();
-                    clickAndDiagnose();
+                    dumpAllButtons();
                 }
             });
 
