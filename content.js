@@ -383,105 +383,110 @@
         // persistent copy when the original disappears. The links are real
         // <a> hrefs that work without React.
 
-        var clonedNav = null;
+        var navLinks = null; // extracted link data [{href, text, icon}]
         var sidebarVisible = false;
 
-        // Clone the nav as soon as we find it
-        function captureNav() {
+        // Extract link data from the nav while it briefly exists
+        function captureNavLinks() {
             var nav = document.querySelector('nav');
-            if (nav && !clonedNav) {
-                clonedNav = nav.cloneNode(true);
-                // Mark it as our clone so we don't confuse it with the original
-                clonedNav.id = 'ai-claude-nav-clone';
-                console.log('[AI Nav] Captured nav clone with ' + clonedNav.querySelectorAll('a').length + ' links');
+            if (nav && !navLinks) {
+                navLinks = [];
+                var links = nav.querySelectorAll('a');
+                for (var i = 0; i < links.length; i++) {
+                    var a = links[i];
+                    var href = a.getAttribute('href') || '';
+                    var text = (a.textContent || '').trim();
+                    // Try to get SVG icon
+                    var svg = a.querySelector('svg');
+                    var svgHTML = svg ? svg.outerHTML : '';
+                    if (href && (href.startsWith('/') || href.startsWith('http'))) {
+                        navLinks.push({ href: href, text: text, svgHTML: svgHTML });
+                    }
+                }
+                console.log('[AI Nav] Captured ' + navLinks.length + ' nav links');
             }
         }
 
-        // Inject our cloned nav as a fixed sidebar
-        function showClonedSidebar() {
-            if (!clonedNav) return;
-            if (document.getElementById('ai-claude-nav-clone')) return;
+        // Build our own clean sidebar from extracted link data
+        function showSidebar() {
+            if (!navLinks || navLinks.length === 0) return;
+            if (document.getElementById('ai-claude-sidebar')) return;
 
-            var sidebar = clonedNav.cloneNode(true);
-            sidebar.style.cssText = 'position:fixed !important;left:0 !important;top:0 !important;width:260px !important;height:100vh !important;background:#1a1a1a !important;z-index:2147483640 !important;overflow-y:auto !important;overflow-x:hidden !important;border-right:1px solid #333 !important;display:flex !important;flex-direction:column !important;';
-
-            // Clean up the clone for our overlay context
-            // 1. Remove invisible click-intercepting overlays (e.g. div.absolute.inset-0.cursor-pointer)
-            var overlays = sidebar.querySelectorAll('[class*="inset-0"][class*="cursor-pointer"], [class*="inset-0"][class*="absolute"]');
-            for (var i = overlays.length - 1; i >= 0; i--) {
-                overlays[i].remove();
-            }
-
-            // 2. Fix positioning and visibility on all elements
-            var allEls = sidebar.querySelectorAll('*');
-            for (var i = 0; i < allEls.length; i++) {
-                var el = allEls[i];
-                // Check computed-style classes for fixed/absolute (Tailwind classes)
-                var cls = (el.className || '').toString();
-                if (cls.indexOf('fixed') !== -1 || cls.indexOf('absolute') !== -1) {
-                    el.style.position = 'relative';
-                }
-                // Also check inline styles
-                if (el.style.position === 'fixed' || el.style.position === 'absolute') {
-                    el.style.position = 'relative';
-                }
-                el.style.visibility = 'visible';
-                el.style.opacity = '1';
-            }
-
-            // 3. Ensure all links are clickable
-            var links = sidebar.querySelectorAll('a');
-            for (var i = 0; i < links.length; i++) {
-                links[i].style.pointerEvents = 'auto';
-                links[i].style.cursor = 'pointer';
-                links[i].style.position = 'relative';
-                links[i].style.zIndex = '10';
-            }
-
-            // 4. Ensure all buttons are clickable
-            var buttons = sidebar.querySelectorAll('button');
-            for (var i = 0; i < buttons.length; i++) {
-                buttons[i].style.pointerEvents = 'auto';
-                buttons[i].style.cursor = 'pointer';
-            }
-
-            // Add backdrop
+            // Backdrop
             var backdrop = document.createElement('div');
-            backdrop.id = 'ai-claude-nav-backdrop';
-            backdrop.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:2147483639;';
-            backdrop.onclick = function() { hideClonedSidebar(); };
+            backdrop.id = 'ai-claude-sidebar-backdrop';
+            backdrop.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:2147483639;cursor:pointer;';
+            backdrop.onclick = function() { hideSidebar(); };
+
+            // Sidebar panel
+            var panel = document.createElement('div');
+            panel.id = 'ai-claude-sidebar';
+            panel.style.cssText = 'position:fixed;left:0;top:0;width:260px;height:100vh;background:#1a1a1a;z-index:2147483640;overflow-y:auto;overflow-x:hidden;border-right:1px solid #444;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+
+            // Header
+            var header = document.createElement('div');
+            header.style.cssText = 'padding:16px;border-bottom:1px solid #333;display:flex;align-items:center;gap:10px;flex-shrink:0;';
+            var headerText = document.createElement('span');
+            headerText.textContent = 'Claude';
+            headerText.style.cssText = 'color:#fff;font-size:16px;font-weight:600;';
+            header.appendChild(headerText);
+            panel.appendChild(header);
+
+            // Links list
+            var list = document.createElement('div');
+            list.style.cssText = 'flex:1;overflow-y:auto;padding:8px 0;';
+
+            for (var i = 0; i < navLinks.length; i++) {
+                var link = navLinks[i];
+                var item = document.createElement('a');
+                item.href = link.href;
+                item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 16px;color:#ccc;text-decoration:none;font-size:14px;cursor:pointer;transition:background 0.15s;';
+                item.onmouseover = function() { this.style.background = '#2a2a2a'; };
+                item.onmouseout = function() { this.style.background = 'transparent'; };
+
+                // Add text (use href as fallback label)
+                var label = link.text || link.href.replace(/^\//, '');
+                var span = document.createElement('span');
+                span.textContent = label;
+                item.appendChild(span);
+
+                // Close sidebar after clicking a link
+                item.addEventListener('click', function() {
+                    setTimeout(function() { hideSidebar(); }, 100);
+                });
+
+                list.appendChild(item);
+            }
+
+            panel.appendChild(list);
 
             document.body.appendChild(backdrop);
-            document.body.appendChild(sidebar);
+            document.body.appendChild(panel);
             sidebarVisible = true;
-            console.log('[AI Nav] Showed cloned sidebar');
+            console.log('[AI Nav] Showed sidebar with ' + navLinks.length + ' links');
         }
 
-        function hideClonedSidebar() {
-            var clone = document.getElementById('ai-claude-nav-clone');
-            var backdrop = document.getElementById('ai-claude-nav-backdrop');
-            if (clone) clone.remove();
+        function hideSidebar() {
+            var panel = document.getElementById('ai-claude-sidebar');
+            var backdrop = document.getElementById('ai-claude-sidebar-backdrop');
+            if (panel) panel.remove();
             if (backdrop) backdrop.remove();
             sidebarVisible = false;
-            console.log('[AI Nav] Hid cloned sidebar');
         }
 
         function toggleSidebar() {
             if (sidebarVisible) {
-                hideClonedSidebar();
+                hideSidebar();
             } else {
-                showClonedSidebar();
+                showSidebar();
             }
         }
 
-        // Try to capture nav immediately and on mutations
-        captureNav();
+        // Capture nav links immediately and via observer
+        captureNavLinks();
 
         var observer = new MutationObserver(function() {
-            // Keep trying to capture the nav until we get it
-            if (!clonedNav) captureNav();
-
-            // Ensure our toggle button exists
+            if (!navLinks) captureNavLinks();
             ensureToggle();
         });
 
