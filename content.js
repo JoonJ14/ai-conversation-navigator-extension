@@ -380,23 +380,35 @@
         // to open conversations. Instead, our ☰ button navigates to the
         // Claude root URL which shows the conversation list / recents page.
 
-        function isOnConversationList() {
-            // Claude root (claude.ai/ or claude.ai/new) shows the conversation list
-            var path = window.location.pathname;
-            return path === '/' || path === '/new' || path === '/recents';
+        function showToast(msg) {
+            var old = document.getElementById('ai-nav-toast');
+            if (old) old.remove();
+            var t = document.createElement('div');
+            t.id = 'ai-nav-toast';
+            t.style.cssText = 'position:fixed;top:50px;left:10px;right:10px;z-index:2147483647;background:#222;color:#0f0;font:11px/1.4 monospace;padding:8px;border-radius:6px;border:1px solid #0f0;white-space:pre-wrap;';
+            t.textContent = msg;
+            document.body.appendChild(t);
+            setTimeout(function() { t.remove(); }, 4000);
         }
 
         function toggleConversationList() {
-            if (isOnConversationList()) {
-                // Already on the conversation list — go back if possible
+            var path = window.location.pathname;
+            var href = window.location.href;
+
+            // DEBUG: Show current state
+            showToast('path="' + path + '"\nhref="' + href + '"\nhistory.length=' + window.history.length + '\nNavigating to /recents...');
+
+            // If we're in a conversation (e.g. /chat/abc123), go to recents
+            // If we're on /new or /, also go to recents to show conversation list
+            // If we're already on /recents, go back
+            if (path === '/recents') {
                 if (window.history.length > 1) {
                     window.history.back();
                 }
             } else {
-                // Navigate to Claude root to show conversations
-                window.location.href = 'https://claude.ai/';
+                window.location.href = 'https://claude.ai/recents';
             }
-            console.log('[AI Nav] Toggled conversation list (navigated to claude.ai/)');
+            console.log('[AI Nav] Toggle conversation list, was at: ' + path);
         }
 
         function ensureToggle() {
