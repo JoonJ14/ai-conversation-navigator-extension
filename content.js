@@ -375,131 +375,52 @@
 
         console.log('[AI Nav] Claude sidebar helper active');
 
-        // The native sidebar/nav with conversations appears briefly on load
-        // then gets hidden (CSS or React removes it for narrow viewports).
-        // We need to catch it and figure out what it is and what hides it.
+        // Claude's native <nav> exists in the DOM but is collapsed to ~49px
+        // wide with transparent background in narrow/iframe viewports.
+        // The wrapper div.fixed.z-sidebar also has 0 height.
+        // We toggle a class on <body> that CSS uses to force the nav expanded
+        // and visible as an overlay.
 
-        // DEBUG: Watch for ANY nav, aside, or sidebar-like elements appearing
-        // or disappearing. Log everything to a persistent overlay.
-        var sidebarLog = [];
-        var logStartTime = Date.now();
+        var sidebarOpen = false;
 
-        function logEvent(msg) {
-            var elapsed = ((Date.now() - logStartTime) / 1000).toFixed(1);
-            sidebarLog.push('[' + elapsed + 's] ' + msg);
-            updateLogOverlay();
+        function toggleSidebar() {
+            sidebarOpen = !sidebarOpen;
+            document.body.classList.toggle('ai-claude-sidebar-open', sidebarOpen);
+            console.log('[AI Nav] Claude sidebar ' + (sidebarOpen ? 'opened' : 'closed'));
         }
 
-        function updateLogOverlay() {
-            var el = document.getElementById('ai-nav-sidebar-log');
-            if (!el) {
-                el = document.createElement('div');
-                el.id = 'ai-nav-sidebar-log';
-                el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:40vh;z-index:2147483647;background:rgba(0,0,0,0.9);color:#0f0;font:9px/1.3 monospace;padding:6px;overflow-y:auto;white-space:pre-wrap;pointer-events:auto;';
-                var closeBtn = document.createElement('div');
-                closeBtn.textContent = '[X]';
-                closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;font-size:12px;';
-                closeBtn.onclick = function() { el.remove(); };
-                el.appendChild(closeBtn);
-                document.body.appendChild(el);
-            }
-            // Update content (keep close button)
-            var content = el.querySelector('.log-content');
-            if (!content) {
-                content = document.createElement('div');
-                content.className = 'log-content';
-                el.appendChild(content);
-            }
-            content.textContent = sidebarLog.join('\n');
-            content.scrollTop = content.scrollHeight;
+        function ensureToggle() {
+            if (document.getElementById('ai-claude-sidebar-btn')) return;
+            if (!document.body) return;
+
+            var btn = createElement('button', {
+                id: 'ai-claude-sidebar-btn',
+                textContent: '\u2630',
+                onClick: function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    toggleSidebar();
+                }
+            });
+
+            document.body.appendChild(btn);
+            console.log('[AI Nav] Claude sidebar toggle button injected');
         }
 
-        // Snapshot all nav-like elements right now
-        function snapshotNavElements(label) {
-            var selectors = ['nav', 'aside', '[role="navigation"]', '[data-sidebar]', '[class*="sidebar"]', '[class*="Sidebar"]', '[class*="drawer"]', '[class*="Drawer"]', '[class*="menu"]'];
-            for (var s = 0; s < selectors.length; s++) {
-                var els = document.querySelectorAll(selectors[s]);
-                for (var i = 0; i < els.length; i++) {
-                    var e = els[i];
-                    var r = e.getBoundingClientRect();
-                    var cs = window.getComputedStyle(e);
-                    logEvent(label + ' ' + selectors[s] + '[' + i + ']: ' +
-                        'tag=' + e.tagName +
-                        ' cls="' + (e.className || '').substring(0, 60) + '"' +
-                        ' size=' + Math.round(r.width) + 'x' + Math.round(r.height) +
-                        ' display=' + cs.display +
-                        ' visibility=' + cs.visibility +
-                        ' opacity=' + cs.opacity +
-                        ' transform=' + cs.transform.substring(0, 30));
-                }
-            }
-        }
-
-        // Do initial snapshot
-        snapshotNavElements('INITIAL');
-
-        // Watch for DOM mutations — specifically nav/sidebar elements being added or removed
-        var sidebarWatcher = new MutationObserver(function(mutations) {
-            for (var m = 0; m < mutations.length; m++) {
-                var mut = mutations[m];
-
-                // Check added nodes
-                for (var a = 0; a < mut.addedNodes.length; a++) {
-                    var node = mut.addedNodes[a];
-                    if (node.nodeType !== 1) continue;
-                    var tag = node.tagName.toLowerCase();
-                    var cls = (node.className || '').toString().toLowerCase();
-                    var role = (node.getAttribute && node.getAttribute('role')) || '';
-
-                    if (tag === 'nav' || tag === 'aside' || role === 'navigation' ||
-                        cls.indexOf('sidebar') !== -1 || cls.indexOf('drawer') !== -1 ||
-                        cls.indexOf('menu') !== -1 || cls.indexOf('panel') !== -1) {
-                        var r = node.getBoundingClientRect();
-                        logEvent('ADDED: <' + tag + '> cls="' + (node.className || '').substring(0, 80) + '" role="' + role + '" size=' + Math.round(r.width) + 'x' + Math.round(r.height));
-                    }
-
-                    // Also check children of added nodes
-                    if (node.querySelectorAll) {
-                        var navChildren = node.querySelectorAll('nav, aside, [role="navigation"]');
-                        for (var c = 0; c < navChildren.length; c++) {
-                            var ch = navChildren[c];
-                            var cr = ch.getBoundingClientRect();
-                            logEvent('ADDED (child): <' + ch.tagName + '> cls="' + (ch.className || '').substring(0, 80) + '" size=' + Math.round(cr.width) + 'x' + Math.round(cr.height));
-                        }
-                    }
-                }
-
-                // Check removed nodes
-                for (var r2 = 0; r2 < mut.removedNodes.length; r2++) {
-                    var rnode = mut.removedNodes[r2];
-                    if (rnode.nodeType !== 1) continue;
-                    var rtag = rnode.tagName.toLowerCase();
-                    var rcls = (rnode.className || '').toString().toLowerCase();
-                    var rrole = (rnode.getAttribute && rnode.getAttribute('role')) || '';
-
-                    if (rtag === 'nav' || rtag === 'aside' || rrole === 'navigation' ||
-                        rcls.indexOf('sidebar') !== -1 || rcls.indexOf('drawer') !== -1 ||
-                        rcls.indexOf('menu') !== -1 || rcls.indexOf('panel') !== -1) {
-                        logEvent('REMOVED: <' + rtag + '> cls="' + (rnode.className || '').substring(0, 80) + '" role="' + rrole + '"');
-                    }
-                }
-            }
+        // Watch for Claude re-rendering (React may remove our button)
+        var navObserver = new MutationObserver(function() {
+            ensureToggle();
         });
 
         if (document.body) {
-            sidebarWatcher.observe(document.body, { childList: true, subtree: true });
+            navObserver.observe(document.body, { childList: true, subtree: true });
         }
 
-        // Also poll periodically to catch CSS-hidden elements
-        var pollCount = 0;
-        var pollInterval = setInterval(function() {
-            pollCount++;
-            snapshotNavElements('POLL#' + pollCount);
-            if (pollCount >= 10) {
-                clearInterval(pollInterval);
-                logEvent('=== Polling complete (10 checks over 10s) ===');
-            }
-        }, 1000);
+        ensureToggle();
+
+        setInterval(function() {
+            ensureToggle();
+        }, 2000);
 
     }
 
