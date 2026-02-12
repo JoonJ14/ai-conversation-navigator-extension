@@ -405,18 +405,44 @@
             var sidebar = clonedNav.cloneNode(true);
             sidebar.style.cssText = 'position:fixed !important;left:0 !important;top:0 !important;width:260px !important;height:100vh !important;background:#1a1a1a !important;z-index:2147483640 !important;overflow-y:auto !important;overflow-x:hidden !important;border-right:1px solid #333 !important;display:flex !important;flex-direction:column !important;';
 
-            // Style internal elements to be visible at 260px width
+            // Clean up the clone for our overlay context
+            // 1. Remove invisible click-intercepting overlays (e.g. div.absolute.inset-0.cursor-pointer)
+            var overlays = sidebar.querySelectorAll('[class*="inset-0"][class*="cursor-pointer"], [class*="inset-0"][class*="absolute"]');
+            for (var i = overlays.length - 1; i >= 0; i--) {
+                overlays[i].remove();
+            }
+
+            // 2. Fix positioning and visibility on all elements
             var allEls = sidebar.querySelectorAll('*');
             for (var i = 0; i < allEls.length; i++) {
                 var el = allEls[i];
-                // Remove fixed/absolute positioning from children
-                var pos = el.style.position || '';
-                if (pos === 'fixed' || pos === 'absolute') {
+                // Check computed-style classes for fixed/absolute (Tailwind classes)
+                var cls = (el.className || '').toString();
+                if (cls.indexOf('fixed') !== -1 || cls.indexOf('absolute') !== -1) {
                     el.style.position = 'relative';
                 }
-                // Make sure elements are visible
+                // Also check inline styles
+                if (el.style.position === 'fixed' || el.style.position === 'absolute') {
+                    el.style.position = 'relative';
+                }
                 el.style.visibility = 'visible';
                 el.style.opacity = '1';
+            }
+
+            // 3. Ensure all links are clickable
+            var links = sidebar.querySelectorAll('a');
+            for (var i = 0; i < links.length; i++) {
+                links[i].style.pointerEvents = 'auto';
+                links[i].style.cursor = 'pointer';
+                links[i].style.position = 'relative';
+                links[i].style.zIndex = '10';
+            }
+
+            // 4. Ensure all buttons are clickable
+            var buttons = sidebar.querySelectorAll('button');
+            for (var i = 0; i < buttons.length; i++) {
+                buttons[i].style.pointerEvents = 'auto';
+                buttons[i].style.cursor = 'pointer';
             }
 
             // Add backdrop
