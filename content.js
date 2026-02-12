@@ -364,11 +364,10 @@
 
     // ============================================================
     // CLAUDE SIDEBAR HELPER (sidebar iframe mode only)
-    // In narrow iframes, Claude collapses its conversation-history sidebar
-    // just like ChatGPT/Gemini/Grok do. Those sites' own toggle buttons
-    // still work, but Claude's toggle can be hard to reach or absent.
-    // This injects a hamburger that finds and clicks Claude's OWN toggle
-    // button — using the same native mechanism instead of manual DOM hacks.
+    // In narrow iframes, Claude collapses its sidebar. We find it using
+    // the confirmed selector `nav.flex` (from Claude-QoL extension) and
+    // force it visible as an overlay when our hamburger is clicked.
+    // Fallback: click Claude's recents link if nav isn't in the DOM.
     // ============================================================
 
     function setupClaudeSidebarHelper() {
@@ -376,63 +375,88 @@
 
         console.log('[AI Nav] Claude sidebar helper active');
 
-        // Find Claude's own sidebar toggle button (NOT our injected one).
-        // Claude's React app renders a toggle button even in narrow
-        // viewports — we just need to find and click it.
-        function findClaudeToggle() {
-            var selectors = [
-                // Known data-testid patterns for Claude's sidebar toggle
-                'button[data-testid="sidebar-toggle"]',
-                'button[data-testid="menu-toggle"]',
-                'button[data-testid="nav-toggle"]',
-                'button[data-testid="close-sidebar"]',
-                'button[data-testid="open-sidebar"]',
-                // Aria label patterns
-                'button[aria-label*="sidebar" i]',
-                'button[aria-label*="menu" i]',
-                'button[aria-label*="navigation" i]',
-                'button[aria-label*="Close nav" i]',
-                'button[aria-label*="Open nav" i]',
-            ];
+        var claudeSidebarOpen = false;
+        var overlayEl = null;
 
-            for (var i = 0; i < selectors.length; i++) {
-                var els = document.querySelectorAll(selectors[i]);
-                for (var j = 0; j < els.length; j++) {
-                    // Skip our own injected button
-                    if (els[j].id === 'ai-claude-sidebar-btn') continue;
-                    return els[j];
+        function getClaudeNav() {
+            // Confirmed selector: Claude's sidebar root is nav.flex
+            // It contains .overflow-y-auto with Starred & Recents sections
+            var navs = document.querySelectorAll('nav');
+            for (var i = 0; i < navs.length; i++) {
+                // The sidebar nav contains a scrollable area with conversation links
+                if (navs[i].classList.contains('flex') &&
+                    navs[i].querySelector('.overflow-y-auto, [class*="overflow"]')) {
+                    return navs[i];
                 }
             }
+            // Fallback: any nav.flex
+            var navFlex = document.querySelector('nav.flex');
+            if (navFlex) return navFlex;
 
-            // Fallback: look for a small icon-button in the top-left area
-            // that isn't ours (Claude's toggle typically lives there)
-            var buttons = document.querySelectorAll('button');
-            for (var i = 0; i < buttons.length; i++) {
-                if (buttons[i].id === 'ai-claude-sidebar-btn') continue;
-                var rect = buttons[i].getBoundingClientRect();
-                if (rect.top < 60 && rect.left < 60 &&
-                    rect.width > 0 && rect.width < 60 &&
-                    rect.height > 0 && rect.height < 60) {
-                    // Must have an icon (SVG) inside — plain text buttons aren't toggles
-                    if (buttons[i].querySelector('svg')) {
-                        return buttons[i];
-                    }
+            // Broader fallback: nav with multiple links (conversation history)
+            for (var i = 0; i < navs.length; i++) {
+                if (navs[i].querySelectorAll('a').length > 3) {
+                    return navs[i];
                 }
             }
-
             return null;
         }
 
-        function toggleClaudeSidebar() {
-            // Strategy: click Claude's own toggle — same mechanism other sites use
-            var claudeBtn = findClaudeToggle();
-            if (claudeBtn) {
-                console.log('[AI Nav] Clicking Claude\'s own sidebar toggle:', claudeBtn);
-                claudeBtn.click();
+        function openClaudeSidebar() {
+            var nav = getClaudeNav();
+            if (nav) {
+                claudeSidebarOpen = true;
+                nav.classList.add('ai-sidebar-forced-open');
+                showOverlay();
+                updateToggleIcon();
+                console.log('[AI Nav] Claude sidebar opened via CSS force');
                 return;
             }
 
-            console.warn('[AI Nav] Could not find Claude sidebar toggle button');
+            // Fallback: try clicking Claude's own recents link in the icon rail
+            var recentsLink = document.querySelector('a[href="/recents"]') ||
+                              document.querySelector('a[href*="recents"]');
+            if (recentsLink) {
+                console.log('[AI Nav] Clicking Claude recents link');
+                recentsLink.click();
+                return;
+            }
+
+            console.warn('[AI Nav] Claude sidebar nav not found in DOM');
+        }
+
+        function closeClaudeSidebar() {
+            var nav = getClaudeNav();
+            if (nav) {
+                nav.classList.remove('ai-sidebar-forced-open');
+            }
+            claudeSidebarOpen = false;
+            hideOverlay();
+            updateToggleIcon();
+        }
+
+        function toggleClaudeSidebar() {
+            if (claudeSidebarOpen) {
+                closeClaudeSidebar();
+            } else {
+                openClaudeSidebar();
+            }
+        }
+
+        function showOverlay() {
+            ensureOverlay();
+            if (overlayEl) overlayEl.classList.add('visible');
+        }
+
+        function hideOverlay() {
+            if (overlayEl) overlayEl.classList.remove('visible');
+        }
+
+        function updateToggleIcon() {
+            var btn = document.getElementById('ai-claude-sidebar-btn');
+            if (btn) {
+                btn.textContent = claudeSidebarOpen ? '\u2715' : '\u2630';
+            }
         }
 
         function ensureToggle() {
@@ -453,49 +477,83 @@
             console.log('[AI Nav] Claude sidebar toggle button injected');
         }
 
+        function ensureOverlay() {
+            if (document.getElementById('ai-claude-sidebar-overlay')) {
+                overlayEl = document.getElementById('ai-claude-sidebar-overlay');
+                return;
+            }
+            if (!document.body) return;
+
+            overlayEl = document.createElement('div');
+            overlayEl.id = 'ai-claude-sidebar-overlay';
+            overlayEl.addEventListener('click', closeClaudeSidebar);
+            document.body.appendChild(overlayEl);
+        }
+
         // Watch for Claude re-rendering (React may remove our button)
         var navObserver = new MutationObserver(function() {
             ensureToggle();
+            // Re-apply forced-open if sidebar should be open
+            if (claudeSidebarOpen) {
+                var nav = getClaudeNav();
+                if (nav && !nav.classList.contains('ai-sidebar-forced-open')) {
+                    nav.classList.add('ai-sidebar-forced-open');
+                }
+            }
         });
 
         if (document.body) {
             navObserver.observe(document.body, { childList: true, subtree: true });
         }
 
+        // Auto-close when user clicks a conversation link inside the sidebar
+        document.addEventListener('click', function(e) {
+            if (!claudeSidebarOpen) return;
+            var nav = getClaudeNav();
+            if (!nav) return;
+            if (nav.contains(e.target) && e.target.closest('a')) {
+                setTimeout(closeClaudeSidebar, 300);
+            }
+        });
+
         // Initial setup
         ensureToggle();
+        ensureOverlay();
 
-        // Periodic health check — ensure our toggle persists
-        setInterval(ensureToggle, 2000);
+        // Periodic health check
+        setInterval(function() {
+            ensureToggle();
+            if (!document.getElementById('ai-claude-sidebar-overlay')) {
+                ensureOverlay();
+            }
+        }, 2000);
 
-        // Log what we can find for debugging
+        // Diagnostic log
         setTimeout(function() {
-            var claudeBtn = findClaudeToggle();
-            if (claudeBtn) {
-                console.log('[AI Nav] Found Claude\'s own toggle:', {
-                    testId: claudeBtn.getAttribute('data-testid'),
-                    ariaLabel: claudeBtn.getAttribute('aria-label'),
-                    rect: claudeBtn.getBoundingClientRect()
+            var nav = getClaudeNav();
+            if (nav) {
+                var computed = window.getComputedStyle(nav);
+                console.log('[AI Nav] Claude sidebar found (nav.flex):', {
+                    classes: nav.className,
+                    display: computed.display,
+                    visibility: computed.visibility,
+                    transform: computed.transform,
+                    width: computed.width,
+                    rect: nav.getBoundingClientRect()
                 });
             } else {
-                console.log('[AI Nav] Claude\'s own toggle button NOT found after 3s');
-                // Log all top-left buttons for debugging
-                var buttons = document.querySelectorAll('button');
-                var topLeftBtns = [];
-                for (var i = 0; i < buttons.length; i++) {
-                    var r = buttons[i].getBoundingClientRect();
-                    if (r.top < 80 && r.left < 80 && r.width > 0) {
-                        topLeftBtns.push({
-                            id: buttons[i].id,
-                            testId: buttons[i].getAttribute('data-testid'),
-                            ariaLabel: buttons[i].getAttribute('aria-label'),
-                            text: buttons[i].textContent.substring(0, 30),
-                            hasSvg: !!buttons[i].querySelector('svg'),
-                            rect: { top: r.top, left: r.left, w: r.width, h: r.height }
-                        });
-                    }
+                console.log('[AI Nav] Claude sidebar (nav.flex) NOT found after 3s');
+                // Log all nav elements for debugging
+                var navs = document.querySelectorAll('nav');
+                console.log('[AI Nav] All nav elements:', navs.length);
+                for (var i = 0; i < navs.length; i++) {
+                    console.log('[AI Nav]   nav[' + i + ']:', {
+                        classes: navs[i].className,
+                        children: navs[i].children.length,
+                        links: navs[i].querySelectorAll('a').length,
+                        rect: navs[i].getBoundingClientRect()
+                    });
                 }
-                console.log('[AI Nav] Top-left buttons found:', topLeftBtns);
             }
         }, 3000);
     }
