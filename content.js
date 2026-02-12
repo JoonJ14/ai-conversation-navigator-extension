@@ -385,30 +385,110 @@
             return document.querySelector('button[aria-label="Toggle menu"]');
         }
 
-        function clickClaudeMenu() {
+        // DEBUG: Click the "Toggle menu" button and report what changes.
+        // This will show a visible overlay with results. Remove after debugging.
+        function clickAndDiagnose() {
             var menuBtn = getClaudeMenuButton();
-            if (menuBtn) {
-                menuBtn.click();
-                console.log('[AI Nav] Clicked Claude native Toggle menu');
-            } else {
-                console.warn('[AI Nav] Claude Toggle menu button not found');
+            var info = [];
+
+            if (!menuBtn) {
+                info.push('button[aria-label="Toggle menu"] NOT FOUND');
+                // List all buttons with aria-labels
+                var allBtns = document.querySelectorAll('button');
+                info.push('All buttons with aria-label:');
+                for (var i = 0; i < allBtns.length; i++) {
+                    var al = allBtns[i].getAttribute('aria-label');
+                    if (al) {
+                        var r = allBtns[i].getBoundingClientRect();
+                        info.push('  "' + al + '" pos=' + Math.round(r.left) + ',' + Math.round(r.top) + ' size=' + Math.round(r.width) + 'x' + Math.round(r.height));
+                    }
+                }
+                showDebug(info);
+                return;
             }
+
+            // Show button info before click
+            var r = menuBtn.getBoundingClientRect();
+            var cs = window.getComputedStyle(menuBtn);
+            info.push('BEFORE CLICK:');
+            info.push('button[aria-label="Toggle menu"]');
+            info.push('  pos: ' + Math.round(r.left) + ',' + Math.round(r.top) + ' size: ' + Math.round(r.width) + 'x' + Math.round(r.height));
+            info.push('  display: ' + cs.display + ' visibility: ' + cs.visibility + ' opacity: ' + cs.opacity);
+            info.push('  parent: ' + menuBtn.parentElement.tagName + '.' + (menuBtn.parentElement.className || '').substring(0, 40));
+
+            // Snapshot DOM state before click
+            var beforeHTML = document.body.innerHTML.length;
+            var beforeNavs = document.querySelectorAll('nav').length;
+            var beforeLinks = document.querySelectorAll('a').length;
+
+            // Click it
+            menuBtn.click();
+            info.push('');
+            info.push('CLICKED! Waiting 800ms...');
+
+            setTimeout(function() {
+                var afterNavs = document.querySelectorAll('nav').length;
+                var afterLinks = document.querySelectorAll('a').length;
+                var afterHTML = document.body.innerHTML.length;
+
+                info.push('');
+                info.push('AFTER CLICK:');
+                info.push('  nav elements: ' + beforeNavs + ' -> ' + afterNavs);
+                info.push('  <a> links: ' + beforeLinks + ' -> ' + afterLinks);
+                info.push('  HTML size: ' + beforeHTML + ' -> ' + afterHTML + ' (diff: ' + (afterHTML - beforeHTML) + ')');
+
+                // Check for new nav elements
+                var navs = document.querySelectorAll('nav');
+                for (var i = 0; i < navs.length; i++) {
+                    var nr = navs[i].getBoundingClientRect();
+                    info.push('  nav[' + i + ']: cls="' + navs[i].className.substring(0, 50) + '" size=' + Math.round(nr.width) + 'x' + Math.round(nr.height));
+                }
+
+                // Check for new links (conversation items)
+                var links = document.querySelectorAll('a');
+                info.push('  Links found (' + links.length + '):');
+                for (var i = 0; i < links.length && i < 10; i++) {
+                    info.push('    a[' + i + ']: href="' + (links[i].getAttribute('href') || '').substring(0, 40) + '" text="' + (links[i].textContent || '').trim().substring(0, 30) + '"');
+                }
+
+                // Check for any new role=dialog, role=menu, or drawer-like elements
+                var dialogs = document.querySelectorAll('[role="dialog"], [role="menu"], [role="navigation"]');
+                info.push('  Dialogs/menus/navigation: ' + dialogs.length);
+                for (var i = 0; i < dialogs.length; i++) {
+                    var dr = dialogs[i].getBoundingClientRect();
+                    info.push('    ' + dialogs[i].tagName + '[role=' + dialogs[i].getAttribute('role') + '] cls="' + dialogs[i].className.substring(0, 40) + '" size=' + Math.round(dr.width) + 'x' + Math.round(dr.height));
+                }
+
+                showDebug(info);
+            }, 800);
+        }
+
+        function showDebug(info) {
+            var old = document.getElementById('ai-nav-debug');
+            if (old) old.remove();
+            var debugEl = document.createElement('div');
+            debugEl.id = 'ai-nav-debug';
+            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:10px/1.4 monospace;padding:8px;overflow-y:auto;white-space:pre-wrap;';
+            debugEl.textContent = '[AI Nav Debug - Click Test]\n' + info.join('\n');
+            var closeBtn = document.createElement('span');
+            closeBtn.textContent = ' [X close]';
+            closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;font-size:14px;';
+            closeBtn.onclick = function() { debugEl.remove(); };
+            debugEl.prepend(closeBtn);
+            document.body.appendChild(debugEl);
         }
 
         function ensureToggle() {
             if (document.getElementById('ai-claude-sidebar-btn')) return;
             if (!document.body) return;
 
-            // Always inject our button — Claude's native "Toggle menu" button
-            // exists in the DOM but is often visually hidden. Our button is
-            // always visible and proxies the click to Claude's hidden native one.
             var btn = createElement('button', {
                 id: 'ai-claude-sidebar-btn',
                 textContent: '\u2630',
                 onClick: function(e) {
                     e.stopPropagation();
                     e.preventDefault();
-                    clickClaudeMenu();
+                    clickAndDiagnose();
                 }
             });
 
