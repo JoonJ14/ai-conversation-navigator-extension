@@ -528,33 +528,53 @@
             }
         }, 2000);
 
-        // Diagnostic log
+        // Visible diagnostic — shows debug info on page since sidebar
+        // iframe can't be right-click inspected. Remove after debugging.
         setTimeout(function() {
+            var info = [];
             var nav = getClaudeNav();
             if (nav) {
                 var computed = window.getComputedStyle(nav);
-                console.log('[AI Nav] Claude sidebar found (nav.flex):', {
-                    classes: nav.className,
-                    display: computed.display,
-                    visibility: computed.visibility,
-                    transform: computed.transform,
-                    width: computed.width,
-                    rect: nav.getBoundingClientRect()
-                });
+                var rect = nav.getBoundingClientRect();
+                info.push('FOUND nav.flex!');
+                info.push('classes: ' + nav.className.substring(0, 80));
+                info.push('display: ' + computed.display);
+                info.push('visibility: ' + computed.visibility);
+                info.push('transform: ' + computed.transform);
+                info.push('width: ' + computed.width);
+                info.push('rect: ' + Math.round(rect.left) + ',' + Math.round(rect.top) + ' ' + Math.round(rect.width) + 'x' + Math.round(rect.height));
             } else {
-                console.log('[AI Nav] Claude sidebar (nav.flex) NOT found after 3s');
-                // Log all nav elements for debugging
+                info.push('nav.flex NOT FOUND');
                 var navs = document.querySelectorAll('nav');
-                console.log('[AI Nav] All nav elements:', navs.length);
+                info.push('Total <nav> elements: ' + navs.length);
                 for (var i = 0; i < navs.length; i++) {
-                    console.log('[AI Nav]   nav[' + i + ']:', {
-                        classes: navs[i].className,
-                        children: navs[i].children.length,
-                        links: navs[i].querySelectorAll('a').length,
-                        rect: navs[i].getBoundingClientRect()
-                    });
+                    var r = navs[i].getBoundingClientRect();
+                    info.push('nav[' + i + ']: cls="' + navs[i].className.substring(0, 60) + '" children=' + navs[i].children.length + ' links=' + navs[i].querySelectorAll('a').length + ' rect=' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
                 }
+                // Also check for aside elements and any sidebar-like containers
+                var asides = document.querySelectorAll('aside');
+                info.push('Total <aside> elements: ' + asides.length);
+                for (var i = 0; i < asides.length; i++) {
+                    var r = asides[i].getBoundingClientRect();
+                    info.push('aside[' + i + ']: cls="' + asides[i].className.substring(0, 60) + '" children=' + asides[i].children.length + ' rect=' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
+                }
+                // Check for recents links
+                var recents = document.querySelector('a[href*="recents"]');
+                info.push('a[href*="recents"]: ' + (recents ? 'FOUND href=' + recents.getAttribute('href') : 'NOT FOUND'));
             }
+
+            // Show as a visible overlay on the page
+            var debugEl = document.createElement('div');
+            debugEl.id = 'ai-nav-debug';
+            debugEl.style.cssText = 'position:fixed;bottom:10px;left:10px;right:10px;z-index:2147483647;background:#000;color:#0f0;font:11px/1.5 monospace;padding:10px;border-radius:6px;max-height:40vh;overflow-y:auto;white-space:pre-wrap;opacity:0.95;pointer-events:auto;';
+            debugEl.textContent = '[AI Nav Debug]\n' + info.join('\n');
+            // Add close button
+            var closeBtn = document.createElement('span');
+            closeBtn.textContent = ' [X close]';
+            closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;';
+            closeBtn.onclick = function() { debugEl.remove(); };
+            debugEl.prepend(closeBtn);
+            document.body.appendChild(debugEl);
         }, 3000);
     }
 
