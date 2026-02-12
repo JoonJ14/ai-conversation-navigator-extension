@@ -235,9 +235,9 @@
 }
 
 /* === CLAUDE SIDEBAR HELPER (sidebar iframe mode) === */
-/* Claude has no native "open sidebar" button — it uses hover-to-reveal.
-   In a narrow iframe, hover-reveal doesn't work reliably.
-   We inject our own toggle button to open/close Claude's sidebar as an overlay. */
+/* In Claude's mobile/responsive layout (used in narrow iframe), the conversation
+   list is behind a native "Toggle menu" button. Our ☰ button proxies clicks
+   to Claude's native menu so the drawer opens/closes natively. */
 
 #ai-claude-sidebar-btn {
     position: fixed !important;
@@ -269,45 +269,4 @@
     background: rgba(60, 60, 60, 0.95) !important;
     color: #fff !important;
     border-color: #777 !important;
-}
-
-/* Semi-transparent overlay behind sidebar when open */
-#ai-claude-sidebar-overlay {
-    position: fixed !important;
-    inset: 0 !important;
-    background: rgba(0, 0, 0, 0.5) !important;
-    z-index: 2147483639 !important;
-    display: none;
-    cursor: pointer !important;
-}
-
-#ai-claude-sidebar-overlay.visible {
-    display: block !important;
-}
-
-/* Force Claude's nav sidebar to overlay when toggled open.
-   Claude uses nav.flex for its sidebar. In narrow viewports it gets
-   hidden — this class forces it visible as a full-height overlay. */
-.ai-sidebar-forced-open {
-    transform: translateX(0) !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    display: flex !important;
-    z-index: 2147483640 !important;
-    pointer-events: auto !important;
-    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5) !important;
-    position: fixed !important;
-    left: 0 !important;
-    top: 0 !important;
-    height: 100vh !important;
-    width: 280px !important;
-    max-width: 85vw !important;
-    background: var(--bg-100, #1a1a1a) !important;
-}
-
-/* Force inner containers visible too (Claude nests multiple layers) */
-.ai-sidebar-forced-open > * {
-    transform: translateX(0) !important;
-    visibility: visible !important;
-    opacity: 1 !important;
 }

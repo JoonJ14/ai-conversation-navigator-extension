@@ -375,101 +375,47 @@
 
         console.log('[AI Nav] Claude sidebar helper active');
 
-        var claudeSidebarOpen = false;
-        var overlayEl = null;
+        // In narrow/iframe viewports, Claude uses a mobile layout with no
+        // persistent <nav>. The conversation list is behind Claude's own
+        // "Toggle menu" button (aria-label="Toggle menu"). We proxy our
+        // ☰ button to click Claude's native toggle instead of trying to
+        // force a nonexistent nav element visible via CSS.
 
-        function getClaudeNav() {
-            // Confirmed selector: Claude's sidebar root is nav.flex
-            // It contains .overflow-y-auto with Starred & Recents sections
-            var navs = document.querySelectorAll('nav');
-            for (var i = 0; i < navs.length; i++) {
-                // The sidebar nav contains a scrollable area with conversation links
-                if (navs[i].classList.contains('flex') &&
-                    navs[i].querySelector('.overflow-y-auto, [class*="overflow"]')) {
-                    return navs[i];
-                }
-            }
-            // Fallback: any nav.flex
-            var navFlex = document.querySelector('nav.flex');
-            if (navFlex) return navFlex;
-
-            // Broader fallback: nav with multiple links (conversation history)
-            for (var i = 0; i < navs.length; i++) {
-                if (navs[i].querySelectorAll('a').length > 3) {
-                    return navs[i];
-                }
-            }
-            return null;
+        function getClaudeMenuButton() {
+            return document.querySelector('button[aria-label="Toggle menu"]');
         }
 
-        function openClaudeSidebar() {
-            var nav = getClaudeNav();
-            if (nav) {
-                claudeSidebarOpen = true;
-                nav.classList.add('ai-sidebar-forced-open');
-                showOverlay();
-                updateToggleIcon();
-                console.log('[AI Nav] Claude sidebar opened via CSS force');
-                return;
-            }
-
-            // Fallback: try clicking Claude's own recents link in the icon rail
-            var recentsLink = document.querySelector('a[href="/recents"]') ||
-                              document.querySelector('a[href*="recents"]');
-            if (recentsLink) {
-                console.log('[AI Nav] Clicking Claude recents link');
-                recentsLink.click();
-                return;
-            }
-
-            console.warn('[AI Nav] Claude sidebar nav not found in DOM');
-        }
-
-        function closeClaudeSidebar() {
-            var nav = getClaudeNav();
-            if (nav) {
-                nav.classList.remove('ai-sidebar-forced-open');
-            }
-            claudeSidebarOpen = false;
-            hideOverlay();
-            updateToggleIcon();
-        }
-
-        function toggleClaudeSidebar() {
-            if (claudeSidebarOpen) {
-                closeClaudeSidebar();
+        function clickClaudeMenu() {
+            var menuBtn = getClaudeMenuButton();
+            if (menuBtn) {
+                menuBtn.click();
+                console.log('[AI Nav] Clicked Claude native Toggle menu');
             } else {
-                openClaudeSidebar();
-            }
-        }
-
-        function showOverlay() {
-            ensureOverlay();
-            if (overlayEl) overlayEl.classList.add('visible');
-        }
-
-        function hideOverlay() {
-            if (overlayEl) overlayEl.classList.remove('visible');
-        }
-
-        function updateToggleIcon() {
-            var btn = document.getElementById('ai-claude-sidebar-btn');
-            if (btn) {
-                btn.textContent = claudeSidebarOpen ? '\u2715' : '\u2630';
+                console.warn('[AI Nav] Claude Toggle menu button not found');
             }
         }
 
         function ensureToggle() {
+            // If Claude's native "Toggle menu" button exists (mobile layout),
+            // don't inject a duplicate — just let the user use Claude's own button.
+            if (getClaudeMenuButton()) {
+                var existing = document.getElementById('ai-claude-sidebar-btn');
+                if (existing) existing.remove();
+                return;
+            }
+
             if (document.getElementById('ai-claude-sidebar-btn')) return;
             if (!document.body) return;
 
+            // Only inject our button if Claude's native menu button is absent
+            // (e.g. desktop layout where sidebar uses hover-reveal)
             var btn = createElement('button', {
                 id: 'ai-claude-sidebar-btn',
                 textContent: '\u2630',
                 onClick: function(e) {
                     e.stopPropagation();
                     e.preventDefault();
-                    toggleClaudeSidebar();
+                    clickClaudeMenu();
                 }
             });
 
@@ -477,138 +423,23 @@
             console.log('[AI Nav] Claude sidebar toggle button injected');
         }
 
-        function ensureOverlay() {
-            if (document.getElementById('ai-claude-sidebar-overlay')) {
-                overlayEl = document.getElementById('ai-claude-sidebar-overlay');
-                return;
-            }
-            if (!document.body) return;
-
-            overlayEl = document.createElement('div');
-            overlayEl.id = 'ai-claude-sidebar-overlay';
-            overlayEl.addEventListener('click', closeClaudeSidebar);
-            document.body.appendChild(overlayEl);
-        }
-
-        // Watch for Claude re-rendering (React may remove our button)
+        // Watch for Claude re-rendering (React may remove elements)
         var navObserver = new MutationObserver(function() {
             ensureToggle();
-            // Re-apply forced-open if sidebar should be open
-            if (claudeSidebarOpen) {
-                var nav = getClaudeNav();
-                if (nav && !nav.classList.contains('ai-sidebar-forced-open')) {
-                    nav.classList.add('ai-sidebar-forced-open');
-                }
-            }
         });
 
         if (document.body) {
             navObserver.observe(document.body, { childList: true, subtree: true });
         }
 
-        // Auto-close when user clicks a conversation link inside the sidebar
-        document.addEventListener('click', function(e) {
-            if (!claudeSidebarOpen) return;
-            var nav = getClaudeNav();
-            if (!nav) return;
-            if (nav.contains(e.target) && e.target.closest('a')) {
-                setTimeout(closeClaudeSidebar, 300);
-            }
-        });
-
         // Initial setup
         ensureToggle();
-        ensureOverlay();
 
         // Periodic health check
         setInterval(function() {
             ensureToggle();
-            if (!document.getElementById('ai-claude-sidebar-overlay')) {
-                ensureOverlay();
-            }
         }, 2000);
 
-        // Visible diagnostic — deep DOM scan for Claude mobile layout.
-        // Remove after debugging.
-        setTimeout(function() {
-            var info = [];
-            info.push('viewport: ' + window.innerWidth + 'x' + window.innerHeight);
-            info.push('URL: ' + location.href);
-            info.push('');
-
-            // Describe an element concisely
-            function desc(el, depth) {
-                var tag = el.tagName.toLowerCase();
-                var cls = el.className && typeof el.className === 'string' ? '.' + el.className.trim().replace(/\s+/g, '.').substring(0, 50) : '';
-                var id = el.id ? '#' + el.id : '';
-                var role = el.getAttribute('role') ? '[role=' + el.getAttribute('role') + ']' : '';
-                var aria = el.getAttribute('aria-label') ? '[aria-label="' + el.getAttribute('aria-label').substring(0, 30) + '"]' : '';
-                var r = el.getBoundingClientRect();
-                var size = Math.round(r.width) + 'x' + Math.round(r.height);
-                var pad = '  '.repeat(depth || 0);
-                return pad + tag + id + cls + role + aria + ' (' + size + ')';
-            }
-
-            // Walk top-level DOM tree (3 levels deep)
-            info.push('=== DOM TREE (body children, 3 levels) ===');
-            function walk(el, depth) {
-                if (depth > 3) return;
-                // Skip our own elements
-                if (el.id && el.id.indexOf('ai-') === 0) return;
-                info.push(desc(el, depth));
-                var children = el.children;
-                for (var i = 0; i < children.length && i < 10; i++) {
-                    walk(children[i], depth + 1);
-                }
-                if (children.length > 10) {
-                    info.push('  '.repeat(depth + 1) + '... +' + (children.length - 10) + ' more');
-                }
-            }
-            var bodyChildren = document.body.children;
-            for (var i = 0; i < bodyChildren.length && i < 8; i++) {
-                walk(bodyChildren[i], 0);
-            }
-
-            info.push('');
-            info.push('=== BUTTONS (possible hamburger/menu) ===');
-            var buttons = document.querySelectorAll('button');
-            info.push('Total buttons: ' + buttons.length);
-            for (var i = 0; i < buttons.length && i < 15; i++) {
-                var b = buttons[i];
-                var txt = (b.textContent || '').trim().substring(0, 30);
-                var svg = b.querySelector('svg') ? ' [has SVG]' : '';
-                var ariaL = b.getAttribute('aria-label') || '';
-                info.push('  btn[' + i + ']: text="' + txt + '" aria="' + ariaL.substring(0, 30) + '"' + svg + ' ' + desc(b));
-                }
-
-            info.push('');
-            info.push('=== LINKS (a tags) ===');
-            var links = document.querySelectorAll('a');
-            info.push('Total links: ' + links.length);
-            for (var i = 0; i < links.length && i < 15; i++) {
-                var a = links[i];
-                info.push('  a[' + i + ']: href="' + (a.getAttribute('href') || '').substring(0, 40) + '" text="' + (a.textContent || '').trim().substring(0, 30) + '"');
-            }
-
-            info.push('');
-            info.push('=== ELEMENTS WITH role ===');
-            var roled = document.querySelectorAll('[role]');
-            for (var i = 0; i < roled.length && i < 10; i++) {
-                info.push('  ' + desc(roled[i]));
-            }
-
-            // Show overlay
-            var debugEl = document.createElement('div');
-            debugEl.id = 'ai-nav-debug';
-            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:10px/1.4 monospace;padding:8px;overflow-y:auto;white-space:pre-wrap;';
-            debugEl.textContent = '[AI Nav Debug v2]\n' + info.join('\n');
-            var closeBtn = document.createElement('span');
-            closeBtn.textContent = ' [X close]';
-            closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;font-size:14px;';
-            closeBtn.onclick = function() { debugEl.remove(); };
-            debugEl.prepend(closeBtn);
-            document.body.appendChild(debugEl);
-        }, 3000);
     }
 
     // ============================================================
