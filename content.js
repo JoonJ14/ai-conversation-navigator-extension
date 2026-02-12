@@ -396,19 +396,12 @@
         }
 
         function ensureToggle() {
-            // If Claude's native "Toggle menu" button exists (mobile layout),
-            // don't inject a duplicate — just let the user use Claude's own button.
-            if (getClaudeMenuButton()) {
-                var existing = document.getElementById('ai-claude-sidebar-btn');
-                if (existing) existing.remove();
-                return;
-            }
-
             if (document.getElementById('ai-claude-sidebar-btn')) return;
             if (!document.body) return;
 
-            // Only inject our button if Claude's native menu button is absent
-            // (e.g. desktop layout where sidebar uses hover-reveal)
+            // Always inject our button — Claude's native "Toggle menu" button
+            // exists in the DOM but is often visually hidden. Our button is
+            // always visible and proxies the click to Claude's hidden native one.
             var btn = createElement('button', {
                 id: 'ai-claude-sidebar-btn',
                 textContent: '\u2630',
