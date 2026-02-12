@@ -375,138 +375,117 @@
 
         console.log('[AI Nav] Claude sidebar helper active');
 
-        // DIAGNOSTIC: Track the sidebar's lifecycle in detail.
-        // Persistent log at the bottom of the page showing real-time changes.
+        // CONFIRMED: React unmounts the <nav> at ~1.2s after load.
+        // The nav briefly exists with 7 links (/new, Search, /recents, /projects).
+        // CSS fixes can't work on an element that doesn't exist.
+        //
+        // Strategy: Clone the nav before React removes it, then inject our
+        // persistent copy when the original disappears. The links are real
+        // <a> hrefs that work without React.
 
-        var logLines = [];
-        var logStart = Date.now();
-        var logEl = null;
+        var clonedNav = null;
+        var sidebarVisible = false;
 
-        function log(msg) {
-            var t = ((Date.now() - logStart) / 1000).toFixed(1);
-            logLines.push('[' + t + 's] ' + msg);
-            if (logLines.length > 80) logLines.shift();
-            renderLog();
-        }
-
-        function renderLog() {
-            if (!logEl) {
-                logEl = document.createElement('div');
-                logEl.id = 'ai-sidebar-diag';
-                logEl.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:45vh;z-index:2147483647;background:rgba(0,0,0,0.92);color:#0f0;font:9px/1.3 monospace;padding:6px;overflow-y:auto;white-space:pre-wrap;';
-                document.body.appendChild(logEl);
-            }
-            logEl.textContent = logLines.join('\n');
-            logEl.scrollTop = logEl.scrollHeight;
-        }
-
-        // Describe a single element
-        function desc(el) {
-            if (!el || el.nodeType !== 1) return '(null)';
-            var r = el.getBoundingClientRect();
-            var cs = window.getComputedStyle(el);
-            return '<' + el.tagName.toLowerCase() + '>' +
-                ' cls="' + (el.className || '').toString().substring(0, 70) + '"' +
-                ' size=' + Math.round(r.width) + 'x' + Math.round(r.height) +
-                ' pos=' + Math.round(r.left) + ',' + Math.round(r.top) +
-                ' position:' + cs.position +
-                ' display:' + cs.display +
-                ' cursor:' + cs.cursor +
-                ' overflow:' + cs.overflow +
-                ' z-index:' + cs.zIndex;
-        }
-
-        // Full snapshot of the sidebar DOM tree (nav + ancestors + siblings)
-        function snapshot(label) {
+        // Clone the nav as soon as we find it
+        function captureNav() {
             var nav = document.querySelector('nav');
-            if (!nav) {
-                log(label + ': NO <nav> in DOM');
-                return;
-            }
-
-            log(label + ': NAV ' + desc(nav));
-
-            // Walk up 4 ancestors
-            var el = nav;
-            for (var i = 1; i <= 4; i++) {
-                el = el.parentElement;
-                if (!el) break;
-                log('  ancestor[' + i + ']: ' + desc(el));
-            }
-
-            // Show nav's children summary
-            var childInfo = [];
-            for (var i = 0; i < nav.children.length; i++) {
-                var c = nav.children[i];
-                var cr = c.getBoundingClientRect();
-                childInfo.push('<' + c.tagName.toLowerCase() + '> ' + Math.round(cr.width) + 'x' + Math.round(cr.height));
-            }
-            log('  nav children (' + nav.children.length + '): ' + childInfo.join(', '));
-
-            // Count links inside nav
-            var links = nav.querySelectorAll('a');
-            log('  nav links: ' + links.length);
-            for (var i = 0; i < links.length && i < 5; i++) {
-                log('    a: href="' + (links[i].getAttribute('href') || '').substring(0, 40) + '" text="' + (links[i].textContent || '').trim().substring(0, 30) + '"');
+            if (nav && !clonedNav) {
+                clonedNav = nav.cloneNode(true);
+                // Mark it as our clone so we don't confuse it with the original
+                clonedNav.id = 'ai-claude-nav-clone';
+                console.log('[AI Nav] Captured nav clone with ' + clonedNav.querySelectorAll('a').length + ' links');
             }
         }
 
-        // Find all elements with cursor:pointer in the sidebar area
-        function findClickableAreas() {
-            log('--- Clickable areas (cursor:pointer) near sidebar ---');
-            // Check elements at various x,y coordinates along the left edge
-            var found = {};
-            for (var y = 50; y < window.innerHeight; y += 100) {
-                for (var x = 0; x < 200; x += 20) {
-                    var el = document.elementFromPoint(x, y);
-                    if (!el) continue;
-                    var cs = window.getComputedStyle(el);
-                    if (cs.cursor === 'pointer') {
-                        var key = el.tagName + '.' + (el.className || '').toString().substring(0, 30);
-                        if (!found[key]) {
-                            found[key] = true;
-                            var r = el.getBoundingClientRect();
-                            log('  POINTER at (' + x + ',' + y + '): ' + desc(el));
-                        }
-                    }
+        // Inject our cloned nav as a fixed sidebar
+        function showClonedSidebar() {
+            if (!clonedNav) return;
+            if (document.getElementById('ai-claude-nav-clone')) return;
+
+            var sidebar = clonedNav.cloneNode(true);
+            sidebar.style.cssText = 'position:fixed !important;left:0 !important;top:0 !important;width:260px !important;height:100vh !important;background:#1a1a1a !important;z-index:2147483640 !important;overflow-y:auto !important;overflow-x:hidden !important;border-right:1px solid #333 !important;display:flex !important;flex-direction:column !important;';
+
+            // Style internal elements to be visible at 260px width
+            var allEls = sidebar.querySelectorAll('*');
+            for (var i = 0; i < allEls.length; i++) {
+                var el = allEls[i];
+                // Remove fixed/absolute positioning from children
+                var pos = el.style.position || '';
+                if (pos === 'fixed' || pos === 'absolute') {
+                    el.style.position = 'relative';
                 }
+                // Make sure elements are visible
+                el.style.visibility = 'visible';
+                el.style.opacity = '1';
+            }
+
+            // Add backdrop
+            var backdrop = document.createElement('div');
+            backdrop.id = 'ai-claude-nav-backdrop';
+            backdrop.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:2147483639;';
+            backdrop.onclick = function() { hideClonedSidebar(); };
+
+            document.body.appendChild(backdrop);
+            document.body.appendChild(sidebar);
+            sidebarVisible = true;
+            console.log('[AI Nav] Showed cloned sidebar');
+        }
+
+        function hideClonedSidebar() {
+            var clone = document.getElementById('ai-claude-nav-clone');
+            var backdrop = document.getElementById('ai-claude-nav-backdrop');
+            if (clone) clone.remove();
+            if (backdrop) backdrop.remove();
+            sidebarVisible = false;
+            console.log('[AI Nav] Hid cloned sidebar');
+        }
+
+        function toggleSidebar() {
+            if (sidebarVisible) {
+                hideClonedSidebar();
+            } else {
+                showClonedSidebar();
             }
         }
 
-        // MutationObserver to track nav appearing/disappearing
-        var lastNavExists = false;
+        // Try to capture nav immediately and on mutations
+        captureNav();
+
         var observer = new MutationObserver(function() {
-            var navNow = !!document.querySelector('nav');
-            if (navNow !== lastNavExists) {
-                lastNavExists = navNow;
-                if (navNow) {
-                    snapshot('NAV APPEARED');
-                } else {
-                    log('NAV DISAPPEARED from DOM!');
-                }
-            }
+            // Keep trying to capture the nav until we get it
+            if (!clonedNav) captureNav();
+
+            // Ensure our toggle button exists
+            ensureToggle();
         });
 
         if (document.body) {
             observer.observe(document.body, { childList: true, subtree: true });
         }
 
-        // Initial snapshot
-        snapshot('INITIAL');
-        findClickableAreas();
+        function ensureToggle() {
+            if (document.getElementById('ai-claude-sidebar-btn')) return;
+            if (!document.body) return;
 
-        // Poll every second for 15 seconds to track changes
-        var pollCount = 0;
-        var pollTimer = setInterval(function() {
-            pollCount++;
-            snapshot('POLL#' + pollCount);
-            if (pollCount === 2) findClickableAreas(); // check again after settle
-            if (pollCount >= 15) {
-                clearInterval(pollTimer);
-                log('=== Polling done (15s). Sidebar state is stable. ===');
-                findClickableAreas(); // final check
-            }
-        }, 1000);
+            var btn = createElement('button', {
+                id: 'ai-claude-sidebar-btn',
+                textContent: '\u2630',
+                onClick: function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    toggleSidebar();
+                }
+            });
+
+            document.body.appendChild(btn);
+            console.log('[AI Nav] Claude sidebar toggle button injected');
+        }
+
+        ensureToggle();
+
+        setInterval(function() {
+            ensureToggle();
+        }, 2000);
     }
 
     // ============================================================
