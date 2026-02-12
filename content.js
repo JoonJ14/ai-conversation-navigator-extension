@@ -375,84 +375,73 @@
 
         console.log('[AI Nav] Claude sidebar helper active');
 
-        // Claude's native <nav> exists in the DOM but is collapsed to ~49px
-        // wide with transparent background in narrow/iframe viewports.
-        // The wrapper div.fixed.z-sidebar also has 0 height.
-        // We toggle a class on <body> that CSS uses to force the nav expanded
-        // and visible as an overlay.
+        // React removes the <nav> from the DOM in narrow viewports.
+        // The sidebar briefly appears on load, then React unmounts it.
+        // We trick React by overriding viewport width checks (innerWidth
+        // and matchMedia) via a page-context script injection. This makes
+        // React think the viewport is desktop-sized so it keeps the sidebar.
+        // Then CSS constrains the layout to actually fit the iframe.
 
-        var sidebarOpen = false;
+        // Inject viewport override into the PAGE context (not content script
+        // isolated world) so React sees the overridden values.
+        function injectViewportOverride() {
+            var script = document.createElement('script');
+            script.textContent = '(' + function() {
+                // Only override if in an iframe (our sidebar)
+                if (window === window.top) return;
 
-        function toggleSidebar() {
-            sidebarOpen = !sidebarOpen;
-            document.body.classList.toggle('ai-claude-sidebar-open', sidebarOpen);
-            console.log('[AI Nav] Claude sidebar ' + (sidebarOpen ? 'opened' : 'closed'));
+                var FAKE_WIDTH = 1200;
 
-            // DEBUG: when opening, show nav element info
-            if (sidebarOpen) {
-                var nav = document.querySelector('nav');
-                if (nav) {
-                    var r = nav.getBoundingClientRect();
-                    var cs = window.getComputedStyle(nav);
-                    var childCount = nav.children.length;
-                    var innerLen = nav.innerHTML.length;
-                    var firstChild = nav.children[0] ? nav.children[0].tagName + '.' + (nav.children[0].className || '').substring(0, 40) : 'none';
+                // Override innerWidth
+                Object.defineProperty(window, 'innerWidth', {
+                    get: function() { return FAKE_WIDTH; },
+                    configurable: true
+                });
 
-                    var debugMsg = 'NAV found!\n' +
-                        'size: ' + Math.round(r.width) + 'x' + Math.round(r.height) + '\n' +
-                        'pos: ' + Math.round(r.left) + ',' + Math.round(r.top) + '\n' +
-                        'display: ' + cs.display + '\n' +
-                        'children: ' + childCount + '\n' +
-                        'innerHTML length: ' + innerLen + '\n' +
-                        'first child: ' + firstChild + '\n' +
-                        'classes: ' + nav.className.substring(0, 100);
+                // Override matchMedia to lie about width-based queries
+                var origMatchMedia = window.matchMedia.bind(window);
+                window.matchMedia = function(query) {
+                    var result = origMatchMedia(query);
+                    // If it's a min-width query, check if our fake width satisfies it
+                    var minMatch = query.match(/\(min-width:\s*(\d+)/);
+                    if (minMatch) {
+                        var minW = parseInt(minMatch[1]);
+                        if (FAKE_WIDTH >= minW && !result.matches) {
+                            return {
+                                matches: true,
+                                media: query,
+                                onchange: null,
+                                addListener: function(cb) { if (result.addListener) result.addListener(cb); },
+                                removeListener: function(cb) { if (result.removeListener) result.removeListener(cb); },
+                                addEventListener: function(t, cb, o) { if (result.addEventListener) result.addEventListener(t, cb, o); },
+                                removeEventListener: function(t, cb, o) { if (result.removeEventListener) result.removeEventListener(t, cb, o); },
+                                dispatchEvent: function(e) { return result.dispatchEvent(e); }
+                            };
+                        }
+                    }
+                    return result;
+                };
 
-                    var toast = document.getElementById('ai-nav-toast');
-                    if (toast) toast.remove();
-                    toast = document.createElement('div');
-                    toast.id = 'ai-nav-toast';
-                    toast.style.cssText = 'position:fixed;top:50px;left:10px;right:10px;z-index:2147483647;background:#000;color:#0f0;font:10px/1.4 monospace;padding:8px;border-radius:6px;border:1px solid #0f0;white-space:pre-wrap;';
-                    toast.textContent = debugMsg;
-                    document.body.appendChild(toast);
-                    setTimeout(function() { if (toast.parentNode) toast.remove(); }, 6000);
-                } else {
-                    console.warn('[AI Nav] No <nav> element found!');
-                }
-            }
+                // Dispatch resize so React re-evaluates
+                window.dispatchEvent(new Event('resize'));
+
+                console.log('[AI Nav] Viewport override injected: innerWidth=' + FAKE_WIDTH);
+            } + ')();';
+
+            (document.head || document.documentElement).appendChild(script);
+            script.remove();
         }
 
-        function ensureToggle() {
-            if (document.getElementById('ai-claude-sidebar-btn')) return;
-            if (!document.body) return;
+        injectViewportOverride();
 
-            var btn = createElement('button', {
-                id: 'ai-claude-sidebar-btn',
-                textContent: '\u2630',
-                onClick: function(e) {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    toggleSidebar();
-                }
-            });
-
-            document.body.appendChild(btn);
-            console.log('[AI Nav] Claude sidebar toggle button injected');
-        }
-
-        // Watch for Claude re-rendering (React may remove our button)
-        var navObserver = new MutationObserver(function() {
-            ensureToggle();
-        });
-
-        if (document.body) {
-            navObserver.observe(document.body, { childList: true, subtree: true });
-        }
-
-        ensureToggle();
-
+        // Also re-inject after navigation (React SPAs may re-init)
+        var lastHref = window.location.href;
         setInterval(function() {
-            ensureToggle();
-        }, 2000);
+            if (window.location.href !== lastHref) {
+                lastHref = window.location.href;
+                injectViewportOverride();
+            }
+        }, 1000);
 
     }
 
