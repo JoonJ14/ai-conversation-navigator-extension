@@ -375,76 +375,131 @@
 
         console.log('[AI Nav] Claude sidebar helper active');
 
-        // In narrow/iframe viewports, Claude uses a mobile layout with no
-        // sidebar or conversation list. There is no native toggle button
-        // to open conversations. Instead, our ☰ button navigates to the
-        // Claude root URL which shows the conversation list / recents page.
+        // The native sidebar/nav with conversations appears briefly on load
+        // then gets hidden (CSS or React removes it for narrow viewports).
+        // We need to catch it and figure out what it is and what hides it.
 
-        function showToast(msg) {
-            var old = document.getElementById('ai-nav-toast');
-            if (old) old.remove();
-            var t = document.createElement('div');
-            t.id = 'ai-nav-toast';
-            t.style.cssText = 'position:fixed;top:50px;left:10px;right:10px;z-index:2147483647;background:#222;color:#0f0;font:11px/1.4 monospace;padding:8px;border-radius:6px;border:1px solid #0f0;white-space:pre-wrap;';
-            t.textContent = msg;
-            document.body.appendChild(t);
-            setTimeout(function() { t.remove(); }, 4000);
+        // DEBUG: Watch for ANY nav, aside, or sidebar-like elements appearing
+        // or disappearing. Log everything to a persistent overlay.
+        var sidebarLog = [];
+        var logStartTime = Date.now();
+
+        function logEvent(msg) {
+            var elapsed = ((Date.now() - logStartTime) / 1000).toFixed(1);
+            sidebarLog.push('[' + elapsed + 's] ' + msg);
+            updateLogOverlay();
         }
 
-        function toggleConversationList() {
-            var path = window.location.pathname;
-            var href = window.location.href;
-
-            // DEBUG: Show current state
-            showToast('path="' + path + '"\nhref="' + href + '"\nhistory.length=' + window.history.length + '\nNavigating to /recents...');
-
-            // If we're in a conversation (e.g. /chat/abc123), go to recents
-            // If we're on /new or /, also go to recents to show conversation list
-            // If we're already on /recents, go back
-            if (path === '/recents') {
-                if (window.history.length > 1) {
-                    window.history.back();
-                }
-            } else {
-                window.location.href = 'https://claude.ai/recents';
+        function updateLogOverlay() {
+            var el = document.getElementById('ai-nav-sidebar-log');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'ai-nav-sidebar-log';
+                el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:40vh;z-index:2147483647;background:rgba(0,0,0,0.9);color:#0f0;font:9px/1.3 monospace;padding:6px;overflow-y:auto;white-space:pre-wrap;pointer-events:auto;';
+                var closeBtn = document.createElement('div');
+                closeBtn.textContent = '[X]';
+                closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;font-size:12px;';
+                closeBtn.onclick = function() { el.remove(); };
+                el.appendChild(closeBtn);
+                document.body.appendChild(el);
             }
-            console.log('[AI Nav] Toggle conversation list, was at: ' + path);
+            // Update content (keep close button)
+            var content = el.querySelector('.log-content');
+            if (!content) {
+                content = document.createElement('div');
+                content.className = 'log-content';
+                el.appendChild(content);
+            }
+            content.textContent = sidebarLog.join('\n');
+            content.scrollTop = content.scrollHeight;
         }
 
-        function ensureToggle() {
-            if (document.getElementById('ai-claude-sidebar-btn')) return;
-            if (!document.body) return;
-
-            var btn = createElement('button', {
-                id: 'ai-claude-sidebar-btn',
-                textContent: '\u2630',
-                onClick: function(e) {
-                    e.stopPropagation();
-                    e.preventDefault();
-                    toggleConversationList();
+        // Snapshot all nav-like elements right now
+        function snapshotNavElements(label) {
+            var selectors = ['nav', 'aside', '[role="navigation"]', '[data-sidebar]', '[class*="sidebar"]', '[class*="Sidebar"]', '[class*="drawer"]', '[class*="Drawer"]', '[class*="menu"]'];
+            for (var s = 0; s < selectors.length; s++) {
+                var els = document.querySelectorAll(selectors[s]);
+                for (var i = 0; i < els.length; i++) {
+                    var e = els[i];
+                    var r = e.getBoundingClientRect();
+                    var cs = window.getComputedStyle(e);
+                    logEvent(label + ' ' + selectors[s] + '[' + i + ']: ' +
+                        'tag=' + e.tagName +
+                        ' cls="' + (e.className || '').substring(0, 60) + '"' +
+                        ' size=' + Math.round(r.width) + 'x' + Math.round(r.height) +
+                        ' display=' + cs.display +
+                        ' visibility=' + cs.visibility +
+                        ' opacity=' + cs.opacity +
+                        ' transform=' + cs.transform.substring(0, 30));
                 }
-            });
-
-            document.body.appendChild(btn);
-            console.log('[AI Nav] Claude sidebar toggle button injected');
+            }
         }
 
-        // Watch for Claude re-rendering (React may remove elements)
-        var navObserver = new MutationObserver(function() {
-            ensureToggle();
+        // Do initial snapshot
+        snapshotNavElements('INITIAL');
+
+        // Watch for DOM mutations — specifically nav/sidebar elements being added or removed
+        var sidebarWatcher = new MutationObserver(function(mutations) {
+            for (var m = 0; m < mutations.length; m++) {
+                var mut = mutations[m];
+
+                // Check added nodes
+                for (var a = 0; a < mut.addedNodes.length; a++) {
+                    var node = mut.addedNodes[a];
+                    if (node.nodeType !== 1) continue;
+                    var tag = node.tagName.toLowerCase();
+                    var cls = (node.className || '').toString().toLowerCase();
+                    var role = (node.getAttribute && node.getAttribute('role')) || '';
+
+                    if (tag === 'nav' || tag === 'aside' || role === 'navigation' ||
+                        cls.indexOf('sidebar') !== -1 || cls.indexOf('drawer') !== -1 ||
+                        cls.indexOf('menu') !== -1 || cls.indexOf('panel') !== -1) {
+                        var r = node.getBoundingClientRect();
+                        logEvent('ADDED: <' + tag + '> cls="' + (node.className || '').substring(0, 80) + '" role="' + role + '" size=' + Math.round(r.width) + 'x' + Math.round(r.height));
+                    }
+
+                    // Also check children of added nodes
+                    if (node.querySelectorAll) {
+                        var navChildren = node.querySelectorAll('nav, aside, [role="navigation"]');
+                        for (var c = 0; c < navChildren.length; c++) {
+                            var ch = navChildren[c];
+                            var cr = ch.getBoundingClientRect();
+                            logEvent('ADDED (child): <' + ch.tagName + '> cls="' + (ch.className || '').substring(0, 80) + '" size=' + Math.round(cr.width) + 'x' + Math.round(cr.height));
+                        }
+                    }
+                }
+
+                // Check removed nodes
+                for (var r2 = 0; r2 < mut.removedNodes.length; r2++) {
+                    var rnode = mut.removedNodes[r2];
+                    if (rnode.nodeType !== 1) continue;
+                    var rtag = rnode.tagName.toLowerCase();
+                    var rcls = (rnode.className || '').toString().toLowerCase();
+                    var rrole = (rnode.getAttribute && rnode.getAttribute('role')) || '';
+
+                    if (rtag === 'nav' || rtag === 'aside' || rrole === 'navigation' ||
+                        rcls.indexOf('sidebar') !== -1 || rcls.indexOf('drawer') !== -1 ||
+                        rcls.indexOf('menu') !== -1 || rcls.indexOf('panel') !== -1) {
+                        logEvent('REMOVED: <' + rtag + '> cls="' + (rnode.className || '').substring(0, 80) + '" role="' + rrole + '"');
+                    }
+                }
+            }
         });
 
         if (document.body) {
-            navObserver.observe(document.body, { childList: true, subtree: true });
+            sidebarWatcher.observe(document.body, { childList: true, subtree: true });
         }
 
-        // Initial setup
-        ensureToggle();
-
-        // Periodic health check
-        setInterval(function() {
-            ensureToggle();
-        }, 2000);
+        // Also poll periodically to catch CSS-hidden elements
+        var pollCount = 0;
+        var pollInterval = setInterval(function() {
+            pollCount++;
+            snapshotNavElements('POLL#' + pollCount);
+            if (pollCount >= 10) {
+                clearInterval(pollInterval);
+                logEvent('=== Polling complete (10 checks over 10s) ===');
+            }
+        }, 1000);
 
     }
 
