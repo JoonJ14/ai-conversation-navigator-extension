@@ -387,6 +387,38 @@
             sidebarOpen = !sidebarOpen;
             document.body.classList.toggle('ai-claude-sidebar-open', sidebarOpen);
             console.log('[AI Nav] Claude sidebar ' + (sidebarOpen ? 'opened' : 'closed'));
+
+            // DEBUG: when opening, show nav element info
+            if (sidebarOpen) {
+                var nav = document.querySelector('nav');
+                if (nav) {
+                    var r = nav.getBoundingClientRect();
+                    var cs = window.getComputedStyle(nav);
+                    var childCount = nav.children.length;
+                    var innerLen = nav.innerHTML.length;
+                    var firstChild = nav.children[0] ? nav.children[0].tagName + '.' + (nav.children[0].className || '').substring(0, 40) : 'none';
+
+                    var debugMsg = 'NAV found!\n' +
+                        'size: ' + Math.round(r.width) + 'x' + Math.round(r.height) + '\n' +
+                        'pos: ' + Math.round(r.left) + ',' + Math.round(r.top) + '\n' +
+                        'display: ' + cs.display + '\n' +
+                        'children: ' + childCount + '\n' +
+                        'innerHTML length: ' + innerLen + '\n' +
+                        'first child: ' + firstChild + '\n' +
+                        'classes: ' + nav.className.substring(0, 100);
+
+                    var toast = document.getElementById('ai-nav-toast');
+                    if (toast) toast.remove();
+                    toast = document.createElement('div');
+                    toast.id = 'ai-nav-toast';
+                    toast.style.cssText = 'position:fixed;top:50px;left:10px;right:10px;z-index:2147483647;background:#000;color:#0f0;font:10px/1.4 monospace;padding:8px;border-radius:6px;border:1px solid #0f0;white-space:pre-wrap;';
+                    toast.textContent = debugMsg;
+                    document.body.appendChild(toast);
+                    setTimeout(function() { if (toast.parentNode) toast.remove(); }, 6000);
+                } else {
+                    console.warn('[AI Nav] No <nav> element found!');
+                }
+            }
         }
 
         function ensureToggle() {
