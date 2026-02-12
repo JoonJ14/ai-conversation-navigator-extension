@@ -349,6 +349,179 @@
     }
 
     // ============================================================
+    // CLAUDE SIDEBAR HELPER (sidebar iframe mode only)
+    // Claude uses hover-to-reveal for its sidebar, which breaks in
+    // narrow iframes. This injects a toggle button that lets the
+    // user open/close Claude's conversation history as an overlay.
+    // ============================================================
+
+    function setupClaudeSidebarHelper() {
+        if (currentSite !== SITE.CLAUDE || !isInSidebar) return;
+
+        console.log('[AI Nav] Claude sidebar helper active');
+
+        var claudeSidebarOpen = false;
+        var overlayEl = null;
+
+        function getClaudeNav() {
+            // Primary: data-testid selector
+            var nav = document.querySelector('nav[data-testid="menu-sidebar"]');
+            if (nav) return nav;
+
+            // Fallback: look for a nav element on the left side
+            var navs = document.querySelectorAll('nav');
+            for (var i = 0; i < navs.length; i++) {
+                var rect = navs[i].getBoundingClientRect();
+                if (rect.height > 200 && rect.left <= 10) {
+                    return navs[i];
+                }
+            }
+
+            return null;
+        }
+
+        function openClaudeSidebar() {
+            var nav = getClaudeNav();
+            if (!nav) {
+                console.log('[AI Nav] Claude sidebar nav not found in DOM');
+                return;
+            }
+
+            claudeSidebarOpen = true;
+            nav.classList.add('ai-sidebar-forced-open');
+            showOverlay();
+            updateToggleIcon();
+            console.log('[AI Nav] Claude sidebar opened');
+        }
+
+        function closeClaudeSidebar() {
+            var nav = getClaudeNav();
+            if (nav) {
+                nav.classList.remove('ai-sidebar-forced-open');
+            }
+
+            claudeSidebarOpen = false;
+            hideOverlay();
+            updateToggleIcon();
+        }
+
+        function toggleClaudeSidebar() {
+            if (claudeSidebarOpen) {
+                closeClaudeSidebar();
+            } else {
+                openClaudeSidebar();
+            }
+        }
+
+        function showOverlay() {
+            ensureOverlay();
+            if (overlayEl) overlayEl.classList.add('visible');
+        }
+
+        function hideOverlay() {
+            if (overlayEl) overlayEl.classList.remove('visible');
+        }
+
+        function updateToggleIcon() {
+            var btn = document.getElementById('ai-claude-sidebar-btn');
+            if (btn) {
+                btn.textContent = claudeSidebarOpen ? '\u2715' : '\u2630';
+            }
+        }
+
+        function ensureToggle() {
+            if (document.getElementById('ai-claude-sidebar-btn')) return;
+            if (!document.body) return;
+
+            var btn = createElement('button', {
+                id: 'ai-claude-sidebar-btn',
+                textContent: '\u2630',
+                onClick: function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    toggleClaudeSidebar();
+                }
+            });
+
+            document.body.appendChild(btn);
+            console.log('[AI Nav] Claude sidebar toggle button injected');
+        }
+
+        function ensureOverlay() {
+            if (document.getElementById('ai-claude-sidebar-overlay')) {
+                overlayEl = document.getElementById('ai-claude-sidebar-overlay');
+                return;
+            }
+            if (!document.body) return;
+
+            overlayEl = document.createElement('div');
+            overlayEl.id = 'ai-claude-sidebar-overlay';
+            overlayEl.addEventListener('click', closeClaudeSidebar);
+            document.body.appendChild(overlayEl);
+        }
+
+        // Watch for Claude re-rendering its nav (React may replace the element)
+        // If sidebar was open, re-apply our class on the new nav element
+        var navObserver = new MutationObserver(function() {
+            // Re-inject our button if Claude removed it
+            ensureToggle();
+
+            // Re-apply forced-open class if sidebar should be open
+            if (claudeSidebarOpen) {
+                var nav = getClaudeNav();
+                if (nav && !nav.classList.contains('ai-sidebar-forced-open')) {
+                    nav.classList.add('ai-sidebar-forced-open');
+                }
+            }
+        });
+
+        if (document.body) {
+            navObserver.observe(document.body, { childList: true, subtree: true });
+        }
+
+        // Auto-close sidebar when user clicks a conversation link inside it
+        document.addEventListener('click', function(e) {
+            if (!claudeSidebarOpen) return;
+            var nav = getClaudeNav();
+            if (!nav) return;
+
+            if (nav.contains(e.target) && e.target.closest('a')) {
+                setTimeout(closeClaudeSidebar, 300);
+            }
+        });
+
+        // Initial setup
+        ensureToggle();
+        ensureOverlay();
+
+        // Periodic health check — ensure our toggle persists
+        setInterval(function() {
+            ensureToggle();
+            if (!document.getElementById('ai-claude-sidebar-overlay')) {
+                ensureOverlay();
+            }
+        }, 2000);
+
+        // Log diagnostic info about Claude's sidebar
+        setTimeout(function() {
+            var nav = getClaudeNav();
+            if (nav) {
+                var computed = window.getComputedStyle(nav);
+                console.log('[AI Nav] Claude sidebar found:', {
+                    testId: nav.getAttribute('data-testid'),
+                    transform: computed.transform,
+                    visibility: computed.visibility,
+                    display: computed.display,
+                    width: computed.width,
+                    rect: nav.getBoundingClientRect()
+                });
+            } else {
+                console.log('[AI Nav] Claude sidebar NOT found after 3s');
+            }
+        }, 3000);
+    }
+
+    // ============================================================
     // INITIALIZATION
     // ============================================================
 
@@ -369,6 +542,9 @@
 
         // Start DOM Guardian
         startDOMGuardian();
+
+        // Claude sidebar helper (only runs on Claude + sidebar mode)
+        setupClaudeSidebarHelper();
 
         // SPA navigation hooks (all platforms — React/SPA apps can wipe our elements)
         const originalPushState = history.pushState;
