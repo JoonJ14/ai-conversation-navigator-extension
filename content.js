@@ -528,50 +528,83 @@
             }
         }, 2000);
 
-        // Visible diagnostic — shows debug info on page since sidebar
-        // iframe can't be right-click inspected. Remove after debugging.
+        // Visible diagnostic — deep DOM scan for Claude mobile layout.
+        // Remove after debugging.
         setTimeout(function() {
             var info = [];
-            var nav = getClaudeNav();
-            if (nav) {
-                var computed = window.getComputedStyle(nav);
-                var rect = nav.getBoundingClientRect();
-                info.push('FOUND nav.flex!');
-                info.push('classes: ' + nav.className.substring(0, 80));
-                info.push('display: ' + computed.display);
-                info.push('visibility: ' + computed.visibility);
-                info.push('transform: ' + computed.transform);
-                info.push('width: ' + computed.width);
-                info.push('rect: ' + Math.round(rect.left) + ',' + Math.round(rect.top) + ' ' + Math.round(rect.width) + 'x' + Math.round(rect.height));
-            } else {
-                info.push('nav.flex NOT FOUND');
-                var navs = document.querySelectorAll('nav');
-                info.push('Total <nav> elements: ' + navs.length);
-                for (var i = 0; i < navs.length; i++) {
-                    var r = navs[i].getBoundingClientRect();
-                    info.push('nav[' + i + ']: cls="' + navs[i].className.substring(0, 60) + '" children=' + navs[i].children.length + ' links=' + navs[i].querySelectorAll('a').length + ' rect=' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
-                }
-                // Also check for aside elements and any sidebar-like containers
-                var asides = document.querySelectorAll('aside');
-                info.push('Total <aside> elements: ' + asides.length);
-                for (var i = 0; i < asides.length; i++) {
-                    var r = asides[i].getBoundingClientRect();
-                    info.push('aside[' + i + ']: cls="' + asides[i].className.substring(0, 60) + '" children=' + asides[i].children.length + ' rect=' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
-                }
-                // Check for recents links
-                var recents = document.querySelector('a[href*="recents"]');
-                info.push('a[href*="recents"]: ' + (recents ? 'FOUND href=' + recents.getAttribute('href') : 'NOT FOUND'));
+            info.push('viewport: ' + window.innerWidth + 'x' + window.innerHeight);
+            info.push('URL: ' + location.href);
+            info.push('');
+
+            // Describe an element concisely
+            function desc(el, depth) {
+                var tag = el.tagName.toLowerCase();
+                var cls = el.className && typeof el.className === 'string' ? '.' + el.className.trim().replace(/\s+/g, '.').substring(0, 50) : '';
+                var id = el.id ? '#' + el.id : '';
+                var role = el.getAttribute('role') ? '[role=' + el.getAttribute('role') + ']' : '';
+                var aria = el.getAttribute('aria-label') ? '[aria-label="' + el.getAttribute('aria-label').substring(0, 30) + '"]' : '';
+                var r = el.getBoundingClientRect();
+                var size = Math.round(r.width) + 'x' + Math.round(r.height);
+                var pad = '  '.repeat(depth || 0);
+                return pad + tag + id + cls + role + aria + ' (' + size + ')';
             }
 
-            // Show as a visible overlay on the page
+            // Walk top-level DOM tree (3 levels deep)
+            info.push('=== DOM TREE (body children, 3 levels) ===');
+            function walk(el, depth) {
+                if (depth > 3) return;
+                // Skip our own elements
+                if (el.id && el.id.indexOf('ai-') === 0) return;
+                info.push(desc(el, depth));
+                var children = el.children;
+                for (var i = 0; i < children.length && i < 10; i++) {
+                    walk(children[i], depth + 1);
+                }
+                if (children.length > 10) {
+                    info.push('  '.repeat(depth + 1) + '... +' + (children.length - 10) + ' more');
+                }
+            }
+            var bodyChildren = document.body.children;
+            for (var i = 0; i < bodyChildren.length && i < 8; i++) {
+                walk(bodyChildren[i], 0);
+            }
+
+            info.push('');
+            info.push('=== BUTTONS (possible hamburger/menu) ===');
+            var buttons = document.querySelectorAll('button');
+            info.push('Total buttons: ' + buttons.length);
+            for (var i = 0; i < buttons.length && i < 15; i++) {
+                var b = buttons[i];
+                var txt = (b.textContent || '').trim().substring(0, 30);
+                var svg = b.querySelector('svg') ? ' [has SVG]' : '';
+                var ariaL = b.getAttribute('aria-label') || '';
+                info.push('  btn[' + i + ']: text="' + txt + '" aria="' + ariaL.substring(0, 30) + '"' + svg + ' ' + desc(b));
+                }
+
+            info.push('');
+            info.push('=== LINKS (a tags) ===');
+            var links = document.querySelectorAll('a');
+            info.push('Total links: ' + links.length);
+            for (var i = 0; i < links.length && i < 15; i++) {
+                var a = links[i];
+                info.push('  a[' + i + ']: href="' + (a.getAttribute('href') || '').substring(0, 40) + '" text="' + (a.textContent || '').trim().substring(0, 30) + '"');
+            }
+
+            info.push('');
+            info.push('=== ELEMENTS WITH role ===');
+            var roled = document.querySelectorAll('[role]');
+            for (var i = 0; i < roled.length && i < 10; i++) {
+                info.push('  ' + desc(roled[i]));
+            }
+
+            // Show overlay
             var debugEl = document.createElement('div');
             debugEl.id = 'ai-nav-debug';
-            debugEl.style.cssText = 'position:fixed;bottom:10px;left:10px;right:10px;z-index:2147483647;background:#000;color:#0f0;font:11px/1.5 monospace;padding:10px;border-radius:6px;max-height:40vh;overflow-y:auto;white-space:pre-wrap;opacity:0.95;pointer-events:auto;';
-            debugEl.textContent = '[AI Nav Debug]\n' + info.join('\n');
-            // Add close button
+            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:10px/1.4 monospace;padding:8px;overflow-y:auto;white-space:pre-wrap;';
+            debugEl.textContent = '[AI Nav Debug v2]\n' + info.join('\n');
             var closeBtn = document.createElement('span');
             closeBtn.textContent = ' [X close]';
-            closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;';
+            closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;font-size:14px;';
             closeBtn.onclick = function() { debugEl.remove(); };
             debugEl.prepend(closeBtn);
             document.body.appendChild(debugEl);
