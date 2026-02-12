@@ -375,74 +375,21 @@
 
         console.log('[AI Nav] Claude sidebar helper active');
 
-        // React removes the <nav> from the DOM in narrow viewports.
-        // The sidebar briefly appears on load, then React unmounts it.
-        // We trick React by overriding viewport width checks (innerWidth
-        // and matchMedia) via a page-context script injection. This makes
-        // React think the viewport is desktop-sized so it keeps the sidebar.
-        // Then CSS constrains the layout to actually fit the iframe.
+        // The sidebar <nav> is NEVER removed from the DOM. It collapses because:
+        //   grandparent div.shrink-0 → collapses to 0 (child is position:fixed)
+        //   parent div.fixed.z-sidebar (lg:sticky) → fixed = out of document flow
+        //   nav.fixed.left-0 → renders behind main content
+        //
+        // Fix: CSS !important overrides force position:sticky on the parent
+        // and proper width on the grandparent. This keeps the sidebar in
+        // document flow so it takes up space and stays visible.
+        //
+        // CSS handles this entirely (see content.css). No JS style forcing
+        // needed — our stylesheet rules survive React re-renders because
+        // React manages element classes, not our external CSS declarations.
 
-        // Inject viewport override into the PAGE context (not content script
-        // isolated world) so React sees the overridden values.
-        function injectViewportOverride() {
-            var script = document.createElement('script');
-            script.textContent = '(' + function() {
-                // Only override if in an iframe (our sidebar)
-                if (window === window.top) return;
-
-                var FAKE_WIDTH = 1200;
-
-                // Override innerWidth
-                Object.defineProperty(window, 'innerWidth', {
-                    get: function() { return FAKE_WIDTH; },
-                    configurable: true
-                });
-
-                // Override matchMedia to lie about width-based queries
-                var origMatchMedia = window.matchMedia.bind(window);
-                window.matchMedia = function(query) {
-                    var result = origMatchMedia(query);
-                    // If it's a min-width query, check if our fake width satisfies it
-                    var minMatch = query.match(/\(min-width:\s*(\d+)/);
-                    if (minMatch) {
-                        var minW = parseInt(minMatch[1]);
-                        if (FAKE_WIDTH >= minW && !result.matches) {
-                            return {
-                                matches: true,
-                                media: query,
-                                onchange: null,
-                                addListener: function(cb) { if (result.addListener) result.addListener(cb); },
-                                removeListener: function(cb) { if (result.removeListener) result.removeListener(cb); },
-                                addEventListener: function(t, cb, o) { if (result.addEventListener) result.addEventListener(t, cb, o); },
-                                removeEventListener: function(t, cb, o) { if (result.removeEventListener) result.removeEventListener(t, cb, o); },
-                                dispatchEvent: function(e) { return result.dispatchEvent(e); }
-                            };
-                        }
-                    }
-                    return result;
-                };
-
-                // Dispatch resize so React re-evaluates
-                window.dispatchEvent(new Event('resize'));
-
-                console.log('[AI Nav] Viewport override injected: innerWidth=' + FAKE_WIDTH);
-            } + ')();';
-
-            (document.head || document.documentElement).appendChild(script);
-            script.remove();
-        }
-
-        injectViewportOverride();
-
-        // Also re-inject after navigation (React SPAs may re-init)
-        var lastHref = window.location.href;
-        setInterval(function() {
-            if (window.location.href !== lastHref) {
-                lastHref = window.location.href;
-                injectViewportOverride();
-            }
-        }, 1000);
-
+        // Nothing else needed — CSS in content.css does the work.
+        // This function just logs that the helper is active.
     }
 
     // ============================================================

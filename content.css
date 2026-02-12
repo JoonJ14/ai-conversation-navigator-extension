@@ -235,46 +235,50 @@
 }
 
 /* === CLAUDE SIDEBAR HELPER (sidebar iframe mode) === */
-/* React removes the <nav> sidebar in narrow viewports. We inject a viewport
-   override so React thinks it's desktop-width and keeps the sidebar.
-   These CSS rules constrain the desktop layout to fit the actual iframe. */
+/* The sidebar <nav> is in the DOM but invisible because:
+   - Parent div (class includes "z-sidebar") has position:fixed at narrow widths
+   - position:fixed removes element from document flow → takes 0 space
+   - Grandparent div.shrink-0 collapses to 0px
+   - Main content fills 100% and covers the sidebar
 
-/* The sidebar nav rendered by React in desktop mode — constrain its width
-   so it doesn't take up too much of the narrow iframe */
-.ai-nav-in-sidebar nav {
-    width: 260px !important;
-    min-width: 260px !important;
-    max-width: 260px !important;
+   Fix: Force position:sticky on the parent (keeps it in document flow)
+   and give proper width to the grandparent so it takes up space.
+
+   DOM structure:
+     div.shrink-0  (grandparent — force min-width)
+       div.fixed.z-sidebar (parent — force sticky)
+         nav.fixed.left-0.h-screen (the sidebar itself — force sticky + width)
+*/
+
+/* Grandparent: has shrink-0 class, wraps the sidebar.
+   Force it to take up space in the flex layout. */
+.ai-nav-in-sidebar div[class*="shrink-0"]:has(> div[class*="z-sidebar"]) {
+    min-width: 50px !important;
+    width: 50px !important;
+    flex-shrink: 0 !important;
 }
 
-#ai-claude-sidebar-btn {
-    position: fixed !important;
-    top: 10px !important;
-    left: 10px !important;
-    z-index: 2147483645 !important;
-    background: rgba(42, 42, 42, 0.95) !important;
-    color: #ccc !important;
-    border: 1px solid #555 !important;
-    border-radius: 8px !important;
-    width: 34px !important;
-    height: 34px !important;
-    font-size: 18px !important;
-    line-height: 1 !important;
-    cursor: pointer !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    padding: 0 !important;
-    transition: all 0.2s ease !important;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
+/* Parent: div with z-sidebar class. Force sticky so it stays in flow. */
+.ai-nav-in-sidebar div[class*="z-sidebar"] {
+    position: sticky !important;
+    top: 0 !important;
+    height: 100vh !important;
+    min-width: 50px !important;
+    width: 50px !important;
+    flex-shrink: 0 !important;
+    z-index: 40 !important;
 }
 
-#ai-claude-sidebar-btn:hover {
-    background: rgba(60, 60, 60, 0.95) !important;
-    color: #fff !important;
-    border-color: #777 !important;
+/* The nav itself: force sticky positioning and proper width. */
+.ai-nav-in-sidebar nav[class*="left-0"][class*="h-screen"] {
+    position: sticky !important;
+    left: auto !important;
+    top: 0 !important;
+    min-width: 50px !important;
+    width: 50px !important;
+    height: 100vh !important;
+    flex-shrink: 0 !important;
+    z-index: 41 !important;
+    /* DEBUG: red outline to confirm visibility */
+    outline: 2px solid red !important;
 }
