@@ -376,155 +376,27 @@
         console.log('[AI Nav] Claude sidebar helper active');
 
         // In narrow/iframe viewports, Claude uses a mobile layout with no
-        // persistent <nav>. The conversation list is behind Claude's own
-        // "Toggle menu" button (aria-label="Toggle menu"). We proxy our
-        // ☰ button to click Claude's native toggle instead of trying to
-        // force a nonexistent nav element visible via CSS.
+        // sidebar or conversation list. There is no native toggle button
+        // to open conversations. Instead, our ☰ button navigates to the
+        // Claude root URL which shows the conversation list / recents page.
 
-        // DEBUG: Interactive button tester.
-        // Shows all buttons with [CLICK] links to test each one.
-        var cachedBtnList = [];
+        function isOnConversationList() {
+            // Claude root (claude.ai/ or claude.ai/new) shows the conversation list
+            var path = window.location.pathname;
+            return path === '/' || path === '/new' || path === '/recents';
+        }
 
-        function dumpAllButtons() {
-            var allBtns = document.querySelectorAll('button');
-            cachedBtnList = [];
-            for (var i = 0; i < allBtns.length; i++) {
-                var b = allBtns[i];
-                var r = b.getBoundingClientRect();
-                if (r.width === 0 && r.height === 0) continue;
-                // Skip our own buttons
-                if (b.id === 'ai-claude-sidebar-btn' || b.id === 'ai-nav-toggle' || b.id === 'ai-nav-refresh') continue;
-                cachedBtnList.push(b);
+        function toggleConversationList() {
+            if (isOnConversationList()) {
+                // Already on the conversation list — go back if possible
+                if (window.history.length > 1) {
+                    window.history.back();
+                }
+            } else {
+                // Navigate to Claude root to show conversations
+                window.location.href = 'https://claude.ai/';
             }
-
-            // Sort by Y then X
-            cachedBtnList.sort(function(a, b) {
-                var ra = a.getBoundingClientRect();
-                var rb = b.getBoundingClientRect();
-                return ra.top === rb.top ? ra.left - rb.left : ra.top - rb.top;
-            });
-
-            showInteractiveDebug();
-        }
-
-        function showInteractiveDebug() {
-            var old = document.getElementById('ai-nav-debug');
-            if (old) old.remove();
-
-            var debugEl = document.createElement('div');
-            debugEl.id = 'ai-nav-debug';
-            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:11px/1.5 monospace;padding:10px;overflow-y:auto;';
-
-            var closeBtn = document.createElement('div');
-            closeBtn.textContent = '[X CLOSE]';
-            closeBtn.style.cssText = 'color:#f55;cursor:pointer;font-size:14px;margin-bottom:8px;';
-            closeBtn.onclick = function() { debugEl.remove(); };
-            debugEl.appendChild(closeBtn);
-
-            var title = document.createElement('div');
-            title.textContent = 'Tap [CLICK #] to test a button. Close overlay first, then result shows after 800ms.';
-            title.style.cssText = 'color:#ff0;margin-bottom:10px;';
-            debugEl.appendChild(title);
-
-            for (var i = 0; i < cachedBtnList.length; i++) {
-                var b = cachedBtnList[i];
-                var r = b.getBoundingClientRect();
-                var text = (b.textContent || '').trim().substring(0, 25);
-                var aria = b.getAttribute('aria-label') || '';
-
-                var row = document.createElement('div');
-                row.style.cssText = 'margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;';
-
-                var clickLink = document.createElement('span');
-                clickLink.textContent = '[CLICK ' + i + ']';
-                clickLink.style.cssText = 'color:#0ff;cursor:pointer;text-decoration:underline;margin-right:8px;font-size:13px;';
-                clickLink.setAttribute('data-idx', String(i));
-                clickLink.onclick = function() {
-                    var idx = parseInt(this.getAttribute('data-idx'));
-                    testClickButton(idx);
-                };
-                row.appendChild(clickLink);
-
-                var info = document.createElement('span');
-                info.textContent = 'pos=' + Math.round(r.left) + ',' + Math.round(r.top) +
-                    ' ' + Math.round(r.width) + 'x' + Math.round(r.height) +
-                    ' text="' + text + '" aria="' + aria + '"';
-                row.appendChild(info);
-
-                debugEl.appendChild(row);
-            }
-
-            document.body.appendChild(debugEl);
-        }
-
-        function testClickButton(idx) {
-            if (idx < 0 || idx >= cachedBtnList.length) return;
-
-            // Close overlay first so we can see what happens
-            var overlay = document.getElementById('ai-nav-debug');
-            if (overlay) overlay.remove();
-
-            // Snapshot before
-            var beforeNavs = document.querySelectorAll('nav').length;
-            var beforeLinks = document.querySelectorAll('a').length;
-            var beforeHTML = document.body.innerHTML.length;
-
-            // Click the target button
-            cachedBtnList[idx].click();
-
-            // Wait and report what changed
-            setTimeout(function() {
-                var afterNavs = document.querySelectorAll('nav').length;
-                var afterLinks = document.querySelectorAll('a').length;
-                var afterHTML = document.body.innerHTML.length;
-
-                var info = [];
-                info.push('CLICKED btn[' + idx + ']');
-                info.push('nav: ' + beforeNavs + '->' + afterNavs);
-                info.push('links: ' + beforeLinks + '->' + afterLinks);
-                info.push('HTML diff: ' + (afterHTML - beforeHTML));
-
-                // Show new elements
-                var navs = document.querySelectorAll('nav');
-                for (var i = 0; i < navs.length; i++) {
-                    var nr = navs[i].getBoundingClientRect();
-                    info.push('nav[' + i + ']: ' + Math.round(nr.width) + 'x' + Math.round(nr.height) + ' cls="' + (navs[i].className || '').substring(0, 50) + '"');
-                }
-
-                var links = document.querySelectorAll('a');
-                if (links.length > 0) {
-                    info.push('Links (' + links.length + '):');
-                    for (var i = 0; i < links.length && i < 8; i++) {
-                        info.push('  "' + (links[i].textContent || '').trim().substring(0, 30) + '" -> ' + (links[i].getAttribute('href') || '').substring(0, 40));
-                    }
-                }
-
-                var specials = document.querySelectorAll('[role="dialog"], [role="menu"], [role="navigation"]');
-                if (specials.length > 0) {
-                    info.push('Dialogs/Menus: ' + specials.length);
-                    for (var i = 0; i < specials.length; i++) {
-                        var sr = specials[i].getBoundingClientRect();
-                        info.push('  ' + specials[i].tagName + '[role=' + specials[i].getAttribute('role') + '] ' + Math.round(sr.width) + 'x' + Math.round(sr.height));
-                    }
-                }
-
-                showResultOverlay(info);
-            }, 800);
-        }
-
-        function showResultOverlay(info) {
-            var old = document.getElementById('ai-nav-debug');
-            if (old) old.remove();
-            var debugEl = document.createElement('div');
-            debugEl.id = 'ai-nav-debug';
-            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:12px/1.6 monospace;padding:12px;overflow-y:auto;white-space:pre-wrap;';
-            debugEl.textContent = '[Result]\n' + info.join('\n');
-            var closeBtn = document.createElement('div');
-            closeBtn.textContent = '[X CLOSE]';
-            closeBtn.style.cssText = 'color:#f55;cursor:pointer;font-size:14px;margin-bottom:8px;';
-            closeBtn.onclick = function() { debugEl.remove(); };
-            debugEl.prepend(closeBtn);
-            document.body.appendChild(debugEl);
+            console.log('[AI Nav] Toggled conversation list (navigated to claude.ai/)');
         }
 
         function ensureToggle() {
@@ -537,7 +409,7 @@
                 onClick: function(e) {
                     e.stopPropagation();
                     e.preventDefault();
-                    dumpAllButtons();
+                    toggleConversationList();
                 }
             });
 
