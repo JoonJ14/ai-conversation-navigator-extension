@@ -381,90 +381,147 @@
         // ☰ button to click Claude's native toggle instead of trying to
         // force a nonexistent nav element visible via CSS.
 
-        // DEBUG: Dump ALL buttons + clickable elements in the top area
-        // to find the real sidebar/conversation-list toggle.
-        function dumpAllButtons() {
-            var info = [];
-            info.push('=== ALL BUTTONS (sorted by position) ===');
-            info.push('viewport: ' + window.innerWidth + 'x' + window.innerHeight);
-            info.push('');
+        // DEBUG: Interactive button tester.
+        // Shows all buttons with [CLICK] links to test each one.
+        var cachedBtnList = [];
 
+        function dumpAllButtons() {
             var allBtns = document.querySelectorAll('button');
-            var btnData = [];
+            cachedBtnList = [];
             for (var i = 0; i < allBtns.length; i++) {
                 var b = allBtns[i];
                 var r = b.getBoundingClientRect();
-                if (r.width === 0 && r.height === 0) continue; // skip hidden
-                var svgPaths = b.querySelectorAll('svg path');
-                var pathD = '';
-                if (svgPaths.length > 0) {
-                    pathD = (svgPaths[0].getAttribute('d') || '').substring(0, 60);
-                }
-                btnData.push({
-                    el: b,
-                    x: Math.round(r.left),
-                    y: Math.round(r.top),
-                    w: Math.round(r.width),
-                    h: Math.round(r.height),
-                    text: (b.textContent || '').trim().substring(0, 25),
-                    aria: b.getAttribute('aria-label') || '',
-                    id: b.id || '',
-                    cls: (b.className || '').substring(0, 50),
-                    pathD: pathD,
-                    parentTag: b.parentElement ? b.parentElement.tagName : '?',
-                    parentCls: b.parentElement ? (b.parentElement.className || '').substring(0, 30) : ''
-                });
+                if (r.width === 0 && r.height === 0) continue;
+                // Skip our own buttons
+                if (b.id === 'ai-claude-sidebar-btn' || b.id === 'ai-nav-toggle' || b.id === 'ai-nav-refresh') continue;
+                cachedBtnList.push(b);
             }
 
-            // Sort by Y then X position (top-left first)
-            btnData.sort(function(a, b) {
-                return a.y === b.y ? a.x - b.x : a.y - b.y;
+            // Sort by Y then X
+            cachedBtnList.sort(function(a, b) {
+                var ra = a.getBoundingClientRect();
+                var rb = b.getBoundingClientRect();
+                return ra.top === rb.top ? ra.left - rb.left : ra.top - rb.top;
             });
 
-            for (var i = 0; i < btnData.length; i++) {
-                var d = btnData[i];
-                info.push('btn[' + i + ']: pos=' + d.x + ',' + d.y + ' size=' + d.w + 'x' + d.h);
-                info.push('  text="' + d.text + '" aria="' + d.aria + '"');
-                info.push('  id="' + d.id + '" cls="' + d.cls + '"');
-                info.push('  parent: ' + d.parentTag + '.' + d.parentCls);
-                if (d.pathD) {
-                    info.push('  svg path d="' + d.pathD + '"');
-                }
-                info.push('');
-            }
-
-            // Also list any <a> links
-            var links = document.querySelectorAll('a');
-            info.push('=== LINKS (' + links.length + ') ===');
-            for (var i = 0; i < links.length && i < 15; i++) {
-                var a = links[i];
-                var r = a.getBoundingClientRect();
-                info.push('a[' + i + ']: pos=' + Math.round(r.left) + ',' + Math.round(r.top) + ' href="' + (a.getAttribute('href') || '').substring(0, 40) + '" text="' + (a.textContent || '').trim().substring(0, 30) + '"');
-            }
-
-            // Also look for nav, aside, drawer-type elements
-            var specials = document.querySelectorAll('nav, aside, [role="dialog"], [role="menu"], [role="navigation"]');
-            info.push('');
-            info.push('=== NAV/ASIDE/DIALOG (' + specials.length + ') ===');
-            for (var i = 0; i < specials.length; i++) {
-                var s = specials[i];
-                var r = s.getBoundingClientRect();
-                info.push(s.tagName + '[role=' + (s.getAttribute('role') || '') + ']: pos=' + Math.round(r.left) + ',' + Math.round(r.top) + ' size=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' cls="' + (s.className || '').substring(0, 40) + '"');
-            }
-
-            showDebug(info);
+            showInteractiveDebug();
         }
 
-        function showDebug(info) {
+        function showInteractiveDebug() {
+            var old = document.getElementById('ai-nav-debug');
+            if (old) old.remove();
+
+            var debugEl = document.createElement('div');
+            debugEl.id = 'ai-nav-debug';
+            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:11px/1.5 monospace;padding:10px;overflow-y:auto;';
+
+            var closeBtn = document.createElement('div');
+            closeBtn.textContent = '[X CLOSE]';
+            closeBtn.style.cssText = 'color:#f55;cursor:pointer;font-size:14px;margin-bottom:8px;';
+            closeBtn.onclick = function() { debugEl.remove(); };
+            debugEl.appendChild(closeBtn);
+
+            var title = document.createElement('div');
+            title.textContent = 'Tap [CLICK #] to test a button. Close overlay first, then result shows after 800ms.';
+            title.style.cssText = 'color:#ff0;margin-bottom:10px;';
+            debugEl.appendChild(title);
+
+            for (var i = 0; i < cachedBtnList.length; i++) {
+                var b = cachedBtnList[i];
+                var r = b.getBoundingClientRect();
+                var text = (b.textContent || '').trim().substring(0, 25);
+                var aria = b.getAttribute('aria-label') || '';
+
+                var row = document.createElement('div');
+                row.style.cssText = 'margin-bottom:6px;border-bottom:1px solid #333;padding-bottom:4px;';
+
+                var clickLink = document.createElement('span');
+                clickLink.textContent = '[CLICK ' + i + ']';
+                clickLink.style.cssText = 'color:#0ff;cursor:pointer;text-decoration:underline;margin-right:8px;font-size:13px;';
+                clickLink.setAttribute('data-idx', String(i));
+                clickLink.onclick = function() {
+                    var idx = parseInt(this.getAttribute('data-idx'));
+                    testClickButton(idx);
+                };
+                row.appendChild(clickLink);
+
+                var info = document.createElement('span');
+                info.textContent = 'pos=' + Math.round(r.left) + ',' + Math.round(r.top) +
+                    ' ' + Math.round(r.width) + 'x' + Math.round(r.height) +
+                    ' text="' + text + '" aria="' + aria + '"';
+                row.appendChild(info);
+
+                debugEl.appendChild(row);
+            }
+
+            document.body.appendChild(debugEl);
+        }
+
+        function testClickButton(idx) {
+            if (idx < 0 || idx >= cachedBtnList.length) return;
+
+            // Close overlay first so we can see what happens
+            var overlay = document.getElementById('ai-nav-debug');
+            if (overlay) overlay.remove();
+
+            // Snapshot before
+            var beforeNavs = document.querySelectorAll('nav').length;
+            var beforeLinks = document.querySelectorAll('a').length;
+            var beforeHTML = document.body.innerHTML.length;
+
+            // Click the target button
+            cachedBtnList[idx].click();
+
+            // Wait and report what changed
+            setTimeout(function() {
+                var afterNavs = document.querySelectorAll('nav').length;
+                var afterLinks = document.querySelectorAll('a').length;
+                var afterHTML = document.body.innerHTML.length;
+
+                var info = [];
+                info.push('CLICKED btn[' + idx + ']');
+                info.push('nav: ' + beforeNavs + '->' + afterNavs);
+                info.push('links: ' + beforeLinks + '->' + afterLinks);
+                info.push('HTML diff: ' + (afterHTML - beforeHTML));
+
+                // Show new elements
+                var navs = document.querySelectorAll('nav');
+                for (var i = 0; i < navs.length; i++) {
+                    var nr = navs[i].getBoundingClientRect();
+                    info.push('nav[' + i + ']: ' + Math.round(nr.width) + 'x' + Math.round(nr.height) + ' cls="' + (navs[i].className || '').substring(0, 50) + '"');
+                }
+
+                var links = document.querySelectorAll('a');
+                if (links.length > 0) {
+                    info.push('Links (' + links.length + '):');
+                    for (var i = 0; i < links.length && i < 8; i++) {
+                        info.push('  "' + (links[i].textContent || '').trim().substring(0, 30) + '" -> ' + (links[i].getAttribute('href') || '').substring(0, 40));
+                    }
+                }
+
+                var specials = document.querySelectorAll('[role="dialog"], [role="menu"], [role="navigation"]');
+                if (specials.length > 0) {
+                    info.push('Dialogs/Menus: ' + specials.length);
+                    for (var i = 0; i < specials.length; i++) {
+                        var sr = specials[i].getBoundingClientRect();
+                        info.push('  ' + specials[i].tagName + '[role=' + specials[i].getAttribute('role') + '] ' + Math.round(sr.width) + 'x' + Math.round(sr.height));
+                    }
+                }
+
+                showResultOverlay(info);
+            }, 800);
+        }
+
+        function showResultOverlay(info) {
             var old = document.getElementById('ai-nav-debug');
             if (old) old.remove();
             var debugEl = document.createElement('div');
             debugEl.id = 'ai-nav-debug';
-            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:10px/1.4 monospace;padding:8px;overflow-y:auto;white-space:pre-wrap;';
-            debugEl.textContent = '[AI Nav Debug - Click Test]\n' + info.join('\n');
-            var closeBtn = document.createElement('span');
-            closeBtn.textContent = ' [X close]';
-            closeBtn.style.cssText = 'color:#f55;cursor:pointer;float:right;font-size:14px;';
+            debugEl.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:12px/1.6 monospace;padding:12px;overflow-y:auto;white-space:pre-wrap;';
+            debugEl.textContent = '[Result]\n' + info.join('\n');
+            var closeBtn = document.createElement('div');
+            closeBtn.textContent = '[X CLOSE]';
+            closeBtn.style.cssText = 'color:#f55;cursor:pointer;font-size:14px;margin-bottom:8px;';
             closeBtn.onclick = function() { debugEl.remove(); };
             debugEl.prepend(closeBtn);
             document.body.appendChild(debugEl);
