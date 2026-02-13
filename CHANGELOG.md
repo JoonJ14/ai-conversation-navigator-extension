@@ -45,6 +45,24 @@ Chose custom UI over native nav cloning because:
 Functionally complete — all navigation links work. Visual polish (matching Claude's exact sidebar design, adding icons, profile button) planned for next session before merging to main.
 
 ---
+## [7.2] — 2026-02-13
+
+### Claude Sidebar Investigation + Baseline Restore
+
+#### Investigation Work
+- Deep investigation into Claude's iframe behavior was performed in extension sidebar mode.
+- Confirmed that Claude native elements (`pin-sidebar-toggle`, left rail `nav`) can appear, but are unstable across hydration/rerender cycles.
+- Tested multiple native-only approaches:
+  - toggle selector targeting and ranking
+  - state reconciliation (`Open sidebar`/`Close sidebar`)
+  - keyboard shortcut fallback
+  - visibility hit-testing and rail forcing
+  - frame-context filtering and deep DOM lookup
+- Result: native in-chat rail persistence in `/new` remains unreliable in this iframe context.
+
+#### Product Decision
+- Restored the previously stable custom Claude fallback helper as active behavior.
+- Kept investigation outcomes documented in `WORKLOG.md` and `TROUBLESHOOTING.md` for future attempts.
 
 ## [7.0] — 2026-02-09
 

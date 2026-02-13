@@ -12,6 +12,7 @@ This document records every issue encountered, every approach tried, and every f
 4. [Gemini Trusted Types / CSP Issues](#4-gemini-trusted-types--csp-issues)
 5. [Content Script Injection in Iframes](#5-content-script-injection-in-iframes)
 6. [Platform-Specific Selector Issues](#6-platform-specific-selector-issues)
+7. [2026-02-13 Native Claude Sidebar Deep Dive](#7-2026-02-13-native-claude-sidebar-deep-dive)
 
 ---
 
@@ -600,6 +601,59 @@ ChatGPT uses reliable data attributes (`data-message-author-role="user"`) that h
 ### Claude: Data-testid Attribute
 
 Claude uses `data-testid="user-human-turn"` which has been stable. This is a semantic test identifier that Claude likely maintains for their own testing, making it relatively reliable.
+
+---
+
+## 7. 2026-02-13 Native Claude Sidebar Deep Dive
+
+This section documents a dedicated follow-up investigation focused specifically on forcing Claude's native in-chat sidebar to remain stable in the extension iframe.
+
+### Goal
+
+Use Claude's native sidebar toggle behavior directly (no custom sidebar clone) so the extension view matches Claude web behavior.
+
+### What was validated
+
+- In some runs, Claude exposes a native toggle with:
+  - `data-testid="pin-sidebar-toggle"`
+  - `aria-label` toggling between `"Open sidebar"` and `"Close sidebar"`
+- In some runs, a left rail `<nav>` exists with expected sidebar dimensions.
+- However, these native elements are not consistently available at click-time, and visual persistence is unstable after hydration/rerender.
+
+### Approaches tried (2026-02-13)
+
+1. Native toggle targeting by selector priority
+- Targeted `pin-sidebar-toggle` first, with aria/data-testid/class fallbacks.
+- Excluded known false matches such as Claude composer/user-menu controls.
+
+2. State reconciliation and auto-triggering
+- Compared `aria` state (`Open sidebar` / `Close sidebar`) against actual on-screen rail state.
+- Triggered native toggle attempts to repair mismatches.
+
+3. Visibility and hit-test verification
+- Changed visibility check to require `elementFromPoint` hit-testing in left rail area.
+- This avoided false positives where rail existed in DOM but was not actually visible on screen.
+
+4. Frame-context hardening
+- Scoped sidebar-mode logic to the extension iframe context.
+- Logged frame depth and main-doc heuristics to reduce false frame hits.
+
+5. Deep DOM search and fallback bridge
+- Added deep query logic for shadow/descendant trees to find native controls at click-time.
+- Built a bridge button that triggers native toggle when found.
+- Added fallback navigation attempts for history access.
+
+### Observed failure pattern
+
+- Native sidebar/toggle may flash briefly and then disappear.
+- Controls can exist in logs while not being reliably represented in the visible extension viewport.
+- Selector correctness alone did not make behavior durable because Claude rerender timing/state in iframe mode keeps invalidating assumptions.
+
+### Decision
+
+For now, native in-chat sidebar persistence in Claude iframe mode is treated as non-reliable.
+
+Active path is to keep the custom Claude fallback helper (stable custom sidebar behavior), and preserve this investigation for future retries.
 
 ---
 
