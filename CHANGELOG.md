@@ -60,6 +60,27 @@ Functionally complete — all navigation links work. Visual polish (matching Cla
   - frame-context filtering and deep DOM lookup
 - Result: native in-chat rail persistence in `/new` remains unreliable in this iframe context.
 
+#### Final High-Depth Retry (Architecture Layer)
+- Ran one final high-depth Codex review across the full troubleshooting history from both prior sessions (Claude agent + Codex medium depth) to identify missing investigation surface area.
+- Conclusion from that review: earlier retries were strong on DOM/state surgery, but weak on parent-level iframe architecture controls.
+- New hypothesis: Claude rail collapse is influenced by effective viewport/container behavior during hydration, so host-layer geometry should be controlled instead of mutating Claude internals.
+
+#### Architecture Fix Attempted
+- Added a wide virtual viewport strategy (`1024px+`) for Claude iframe in the extension.
+- Added extension-level `Rail / Split / Chat` view controls to pan the visible region instead of forcing Claude DOM state.
+- Scoped sidebar logic strictly to the named extension iframe context.
+- Temporarily disabled custom Claude fallback behavior during the spike to avoid mixed-controller interference.
+
+#### Why It Was Reasonable
+1. It targeted the one area not fully exhausted in previous attempts: parent container/viewport architecture.
+2. It reduced dependence on fragile selectors and timing-sensitive click automation.
+3. It tested whether native behavior could be preserved by keeping Claude in desktop layout conditions.
+
+#### Outcome
+- The native rail could still appear briefly and then retract after hydration.
+- Rail/Split/Chat controls shifted framing but did not create durable native rail behavior.
+- Architecture-level fix improved diagnosis, but did not convert native rail into a stable product behavior in sidebar iframe mode.
+
 #### Product Decision
 - Restored the previously stable custom Claude fallback helper as active behavior.
 - Kept investigation outcomes documented in `WORKLOG.md` and `TROUBLESHOOTING.md` for future attempts.

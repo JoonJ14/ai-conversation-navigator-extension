@@ -408,6 +408,45 @@ When the ☰ button is clicked, we build a completely new sidebar from scratch:
 3. **Inline styles on fresh elements are immune to external CSS.** This is the cleanest way to inject UI into a page with complex existing stylesheets.
 4. **The 1.2-second nav capture window is reliable** — it works for both DOM cloning (Approach 10) and data extraction (this approach).
 
+### Approach 12: Architecture-Level Wide Viewport Virtualization (Final Retry)
+
+**Context for this final retry (cross-session review):**
+
+After two prior sessions (Claude agent and Codex medium depth) focused mainly on selector matching, toggle clicking, state reconciliation, and visibility forcing, we did a full high-depth pass over all logs and failures. The key observation was that many attempts were still **DOM surgery inside Claude's app tree**, while the recurring symptom was structural:
+- the native rail appears briefly,
+- then retracts/collapses during or after hydration,
+- and button/state signals often disagree with what is actually visible.
+
+This suggested we were likely missing a **host architecture layer** issue (iframe viewport and container geometry), not just missing one more selector.
+
+**Hypothesis:**
+
+Claude's layout mode might be decided from effective viewport/container conditions across hydration phases. If we keep the Claude iframe itself in a desktop-width layout and only clip/pan at the extension container level, Claude may keep native rail behavior without us mutating Claude DOM/state.
+
+**Parent-level architecture fix attempted:**
+- Added a `frame-wrapper` clipping container in `sidebar.html`.
+- Set Claude iframe to a wide virtual viewport (`1024px+`) so desktop layout conditions stay true.
+- Added explicit `Rail / Split / Chat` mode controls in extension chrome (outside Claude DOM).
+- Switched views by horizontal panning/offsets rather than forcing Claude node styles/classes.
+- Named/scoped iframe context so sidebar-only logic targets only the extension Claude frame.
+- Disabled custom Claude fallback helper during wide-mode runs to avoid mixed-control interference.
+
+**Why this looked promising:**
+1. It removed dependence on fragile in-app selectors and React timing.
+2. It moved control to extension-owned parent layers, where we have deterministic ownership.
+3. It directly targeted the gap seen in prior sessions: architecture/viewport behavior instead of component-level patches.
+
+**Observed test results:**
+- Native rail could still appear first, then retract/collapse after Claude hydration.
+- `Rail / Split / Chat` controls mostly changed visible horizontal region but did not produce durable native rail interaction.
+- In some runs, controls affected framing while native toggle/rail state still desynced from visible UI.
+
+**Result:** ❌ Not reliable in practice. Architecture-level virtualization improved diagnosis and eliminated some false selector paths, but still did not produce stable native rail persistence.
+
+**Final learning from this retry:**
+
+Even when DOM surgery is removed, app-controlled rerender/state transitions can still retract the rail in iframe mode. This confirms the limitation is deeper than selector quality and supports the product decision to keep the custom Claude sidebar fallback as the dependable path.
+
 ### Summary of Approaches
 
 | # | Approach | Technique | Result | Why It Failed / Succeeded |
@@ -423,6 +462,7 @@ When the ☰ button is clicked, we build a completely new sidebar from scratch:
 | 9 | Standalone toggle button | Inject ☰ to trigger native sidebar | ⚠️ Partial | Nav visible but empty — React doesn't render children |
 | 10 | Clone the nav DOM | Deep clone during 1.2s window | ⚠️ Visual only | Looks perfect but clicks dead — Tailwind CSS blocks + no React handlers |
 | 11 | Custom UI from extracted links | Extract href/text, build own sidebar | ✅ Working | Clean elements, no CSS conflicts, real `<a>` navigation |
+| 12 | Wide viewport virtualization | 1024px iframe + Rail/Split/Chat panning | ❌ | Rail still retracts after hydration; not stable enough |
 
 ### Key Technical Learnings
 
@@ -439,6 +479,7 @@ When the ☰ button is clicked, we build a completely new sidebar from scratch:
 11. **Data extraction beats DOM cloning for cross-framework interop.** Extract the stable data (URLs, text), discard the framework-specific DOM, and build your own clean UI.
 12. **URL routes are a web app's most stable contract.** They change far less often than CSS classes, DOM structure, or component internals because they affect bookmarks, shared links, and SEO.
 13. **Inline styles on freshly created elements are immune to external CSS interference.** This is the most reliable way to inject interactive UI into pages with complex existing stylesheets.
+14. **Architecture-level viewport tricks help diagnosis but still lose to app-controlled rerender/state if the app retracts UI after hydration.**
 
 ---
 

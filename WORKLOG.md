@@ -25,6 +25,7 @@ Claude native in-chat sidebar is not reliably stable in this iframe setup.
   - `setupClaudeSidebarHelper()` builds a custom sidebar from captured Claude nav links.
   - Custom toggle button `#ai-claude-sidebar-btn` is used for that fallback behavior.
 - Experimental native-only bridge/reconcile code from today was reverted from active code.
+- Final architecture-level trial (wide virtual viewport + Rail/Split/Chat modes) was also tested and reverted after failure to keep native rail access stable.
 
 ## Key Decision
 Treat native Claude in-chat rail persistence as non-reliable for now. Keep the custom fallback sidebar approach as the practical path.
