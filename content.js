@@ -134,25 +134,39 @@
         let messages = [];
 
         if (currentSite === SITE.CLAUDE) {
-            messages = document.querySelectorAll('[data-testid="user-human-turn"]');
+            // Primary: current data-testid attribute for user messages
+            messages = document.querySelectorAll('[data-testid="user-message"]');
+            // Fallback: class-based selector used in some Claude UI versions
+            if (messages.length === 0) {
+                messages = document.querySelectorAll('.font-user-message');
+            }
+            // Fallback: older indexed data-testid (user-human-turn-0, user-human-turn-1, etc.)
+            if (messages.length === 0) {
+                messages = document.querySelectorAll('[data-testid^="user-human-turn"]');
+            }
         }
         else if (currentSite === SITE.CHATGPT) {
             messages = document.querySelectorAll('[data-message-author-role="user"]');
         }
         else if (currentSite === SITE.GROK) {
-            const allBubbles = document.querySelectorAll('div.message-bubble');
-            messages = [];
-            allBubbles.forEach(function(bubble) {
-                const container = bubble.closest('[class*="message"]');
-                if (container) {
-                    const isBot = container.querySelector('[class*="bot"]') ||
-                                  container.querySelector('[class*="assistant"]') ||
-                                  container.querySelector('[class*="grok"]');
-                    if (!isBot) messages.push(bubble);
-                } else {
-                    messages.push(bubble);
-                }
-            });
+            // Primary: Grok uses Tailwind classes — user messages have items-end alignment
+            messages = document.querySelectorAll('div.message-row.items-end');
+            // Fallback: try broader message-row detection if Tailwind classes change
+            if (messages.length === 0) {
+                var allRows = document.querySelectorAll('div.message-row');
+                var userRows = [];
+                allRows.forEach(function(row) {
+                    // User messages are right-aligned (items-end) or lack bot indicators
+                    if (!row.classList.contains('items-start')) {
+                        userRows.push(row);
+                    }
+                });
+                if (userRows.length > 0) messages = userRows;
+            }
+            // Fallback: older message-bubble selector
+            if (messages.length === 0) {
+                messages = document.querySelectorAll('div.message-bubble');
+            }
         }
         else if (currentSite === SITE.GEMINI) {
             messages = document.querySelectorAll('div.query-text');
@@ -349,6 +363,163 @@
     }
 
     // ============================================================
+    // CLAUDE SIDEBAR HELPER (sidebar iframe mode only)
+    // In narrow iframes, Claude collapses its sidebar. We find it using
+    // the confirmed selector `nav.flex` (from Claude-QoL extension) and
+    // force it visible as an overlay when our hamburger is clicked.
+    // Fallback: click Claude's recents link if nav isn't in the DOM.
+    // ============================================================
+
+    function setupClaudeSidebarHelper() {
+        if (currentSite !== SITE.CLAUDE || !isInSidebar) return;
+
+        console.log('[AI Nav] Claude sidebar helper active');
+
+        // CONFIRMED: React unmounts the <nav> at ~1.2s after load.
+        // The nav briefly exists with 7 links (/new, Search, /recents, /projects).
+        // CSS fixes can't work on an element that doesn't exist.
+        //
+        // Strategy: Clone the nav before React removes it, then inject our
+        // persistent copy when the original disappears. The links are real
+        // <a> hrefs that work without React.
+
+        var navLinks = null; // extracted link data [{href, text, icon}]
+        var sidebarVisible = false;
+
+        // Extract link data from the nav while it briefly exists
+        function captureNavLinks() {
+            var nav = document.querySelector('nav');
+            if (nav && !navLinks) {
+                navLinks = [];
+                var links = nav.querySelectorAll('a');
+                for (var i = 0; i < links.length; i++) {
+                    var a = links[i];
+                    var href = a.getAttribute('href') || '';
+                    var text = (a.textContent || '').trim();
+                    // Try to get SVG icon
+                    var svg = a.querySelector('svg');
+                    var svgHTML = svg ? svg.outerHTML : '';
+                    if (href && (href.startsWith('/') || href.startsWith('http'))) {
+                        navLinks.push({ href: href, text: text, svgHTML: svgHTML });
+                    }
+                }
+                console.log('[AI Nav] Captured ' + navLinks.length + ' nav links');
+            }
+        }
+
+        // Build our own clean sidebar from extracted link data
+        function showSidebar() {
+            if (!navLinks || navLinks.length === 0) return;
+            if (document.getElementById('ai-claude-sidebar')) return;
+
+            // Backdrop
+            var backdrop = document.createElement('div');
+            backdrop.id = 'ai-claude-sidebar-backdrop';
+            backdrop.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:2147483639;cursor:pointer;';
+            backdrop.onclick = function() { hideSidebar(); };
+
+            // Sidebar panel
+            var panel = document.createElement('div');
+            panel.id = 'ai-claude-sidebar';
+            panel.style.cssText = 'position:fixed;left:0;top:0;width:260px;height:100vh;background:#1a1a1a;z-index:2147483640;overflow-y:auto;overflow-x:hidden;border-right:1px solid #444;display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;';
+
+            // Header
+            var header = document.createElement('div');
+            header.style.cssText = 'padding:16px;border-bottom:1px solid #333;display:flex;align-items:center;gap:10px;flex-shrink:0;';
+            var headerText = document.createElement('span');
+            headerText.textContent = 'Claude';
+            headerText.style.cssText = 'color:#fff;font-size:16px;font-weight:600;';
+            header.appendChild(headerText);
+            panel.appendChild(header);
+
+            // Links list
+            var list = document.createElement('div');
+            list.style.cssText = 'flex:1;overflow-y:auto;padding:8px 0;';
+
+            for (var i = 0; i < navLinks.length; i++) {
+                var link = navLinks[i];
+                var item = document.createElement('a');
+                item.href = link.href;
+                item.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px 16px;color:#ccc;text-decoration:none;font-size:14px;cursor:pointer;transition:background 0.15s;';
+                item.onmouseover = function() { this.style.background = '#2a2a2a'; };
+                item.onmouseout = function() { this.style.background = 'transparent'; };
+
+                // Add text (use href as fallback label)
+                var label = link.text || link.href.replace(/^\//, '');
+                var span = document.createElement('span');
+                span.textContent = label;
+                item.appendChild(span);
+
+                // Close sidebar after clicking a link
+                item.addEventListener('click', function() {
+                    setTimeout(function() { hideSidebar(); }, 100);
+                });
+
+                list.appendChild(item);
+            }
+
+            panel.appendChild(list);
+
+            document.body.appendChild(backdrop);
+            document.body.appendChild(panel);
+            sidebarVisible = true;
+            console.log('[AI Nav] Showed sidebar with ' + navLinks.length + ' links');
+        }
+
+        function hideSidebar() {
+            var panel = document.getElementById('ai-claude-sidebar');
+            var backdrop = document.getElementById('ai-claude-sidebar-backdrop');
+            if (panel) panel.remove();
+            if (backdrop) backdrop.remove();
+            sidebarVisible = false;
+        }
+
+        function toggleSidebar() {
+            if (sidebarVisible) {
+                hideSidebar();
+            } else {
+                showSidebar();
+            }
+        }
+
+        // Capture nav links immediately and via observer
+        captureNavLinks();
+
+        var observer = new MutationObserver(function() {
+            if (!navLinks) captureNavLinks();
+            ensureToggle();
+        });
+
+        if (document.body) {
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
+
+        function ensureToggle() {
+            if (document.getElementById('ai-claude-sidebar-btn')) return;
+            if (!document.body) return;
+
+            var btn = createElement('button', {
+                id: 'ai-claude-sidebar-btn',
+                textContent: '\u2630',
+                onClick: function(e) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    toggleSidebar();
+                }
+            });
+
+            document.body.appendChild(btn);
+            console.log('[AI Nav] Claude sidebar toggle button injected');
+        }
+
+        ensureToggle();
+
+        setInterval(function() {
+            ensureToggle();
+        }, 2000);
+    }
+
+    // ============================================================
     // INITIALIZATION
     // ============================================================
 
@@ -369,6 +540,9 @@
 
         // Start DOM Guardian
         startDOMGuardian();
+
+        // Claude sidebar helper (only runs on Claude + sidebar mode)
+        setupClaudeSidebarHelper();
 
         // SPA navigation hooks (all platforms — React/SPA apps can wipe our elements)
         const originalPushState = history.pushState;

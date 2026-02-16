@@ -4,6 +4,87 @@ All notable changes to the AI Conversation Navigator Firefox Extension are docum
 
 This extension is a separate project from the [Tampermonkey userscript version](https://github.com/joonj14/ai-conversation-navigator). The extension adds a multi-AI sidebar panel on top of the core navigation functionality.
 
+## [7.1] — 2026-02-12
+
+### Claude Sidebar Navigation — Custom UI Approach
+
+#### Problem
+When Claude.ai loads inside the extension's narrow sidebar iframe, Claude's native sidebar (chat history, navigation links) collapses into mobile mode and becomes inaccessible. Previous approaches (documented in TROUBLESHOOTING.md, Approaches 1-8) tried to force the sidebar open or spoof viewport width, all of which failed or were too fragile.
+
+#### What Was Tried This Session
+
+**Approach 9 — Standalone toggle button:**
+Injected a ☰ hamburger button that tried to trigger Claude's native sidebar by programmatically clicking Claude's own toggle button or force-showing the `<nav>` element. Failed because React synthetic events don't respond to programmatic `.click()` calls, and making the nav visible without React state produced an empty shell.
+
+**Approach 10 — Deep clone of nav DOM:**
+Used `MutationObserver` to detect and `cloneNode(true)` Claude's `<nav>` during the ~1.2 second window when it's fully rendered before collapse. Injected the clone as a fixed overlay sidebar. The clone looked **pixel-perfect** — visually identical to Claude's native sidebar. However, **no buttons or links worked**. Root cause: `cloneNode` copies DOM structure and CSS classes but NOT React event handlers. Claude's Tailwind CSS (thousands of utility classes) also continued applying to the cloned elements, creating multiple layers of click-blocking behavior (pointer-events:none, z-index stacking, pseudo-elements, overflow clipping) that couldn't be fully overridden even with aggressive cleanup.
+
+**Approach 11 — Custom UI from extracted link data (shipped):**
+Instead of cloning the DOM, extract only the link data (href + text) from the nav during the 1.2s window, then build a completely new sidebar using fresh `document.createElement()` calls with pure inline styles. Zero Tailwind class inheritance, zero dead React handlers. All links are real `<a>` tags with real `href` attributes that use standard browser navigation.
+
+#### Changes
+- Replaced nav DOM cloning logic with link data extraction (`captureNavLinks()`)
+- Built custom sidebar UI generator (`showSidebar()`) with:
+  - Fixed panel (260px, dark theme, scrollable)
+  - "Claude" header
+  - Navigation links extracted from Claude's nav (e.g., `/new`, `/recents`, `/projects`)
+  - Hover effects via inline event handlers
+  - Backdrop overlay that closes sidebar on click
+  - Auto-close after clicking a link
+- Hamburger toggle button (☰) positioned at top-left of Claude pages in sidebar mode
+- Updated TROUBLESHOOTING.md with Approaches 9, 10, 11 and 5 new technical learnings
+
+#### Architecture Decision
+Chose custom UI over native nav cloning because:
+1. **URL routes are stable** — `/new`, `/recents`, `/projects` are part of Claude's app architecture and change far less often than CSS classes or DOM structure
+2. **Zero CSS conflicts** — fresh elements with inline styles are immune to Tailwind interference
+3. **Full control** — can match Claude's visual design on our own terms without fighting inherited styles
+4. **No React dependency** — doesn't rely on React state, synthetic events, or component lifecycle
+
+#### Status
+Functionally complete — all navigation links work. Visual polish (matching Claude's exact sidebar design, adding icons, profile button) planned for next session before merging to main.
+
+---
+## [7.2] — 2026-02-13
+
+### Claude Sidebar Investigation + Baseline Restore
+
+#### Investigation Work
+- Deep investigation into Claude's iframe behavior was performed in extension sidebar mode.
+- Confirmed that Claude native elements (`pin-sidebar-toggle`, left rail `nav`) can appear, but are unstable across hydration/rerender cycles.
+- Tested multiple native-only approaches:
+  - toggle selector targeting and ranking
+  - state reconciliation (`Open sidebar`/`Close sidebar`)
+  - keyboard shortcut fallback
+  - visibility hit-testing and rail forcing
+  - frame-context filtering and deep DOM lookup
+- Result: native in-chat rail persistence in `/new` remains unreliable in this iframe context.
+
+#### Final High-Depth Retry (Architecture Layer)
+- Ran one final high-depth Codex review across the full troubleshooting history from both prior sessions (Claude agent + Codex medium depth) to identify missing investigation surface area.
+- Conclusion from that review: earlier retries were strong on DOM/state surgery, but weak on parent-level iframe architecture controls.
+- New hypothesis: Claude rail collapse is influenced by effective viewport/container behavior during hydration, so host-layer geometry should be controlled instead of mutating Claude internals.
+
+#### Architecture Fix Attempted
+- Added a wide virtual viewport strategy (`1024px+`) for Claude iframe in the extension.
+- Added extension-level `Rail / Split / Chat` view controls to pan the visible region instead of forcing Claude DOM state.
+- Scoped sidebar logic strictly to the named extension iframe context.
+- Temporarily disabled custom Claude fallback behavior during the spike to avoid mixed-controller interference.
+
+#### Why It Was Reasonable
+1. It targeted the one area not fully exhausted in previous attempts: parent container/viewport architecture.
+2. It reduced dependence on fragile selectors and timing-sensitive click automation.
+3. It tested whether native behavior could be preserved by keeping Claude in desktop layout conditions.
+
+#### Outcome
+- The native rail could still appear briefly and then retract after hydration.
+- Rail/Split/Chat controls shifted framing but did not create durable native rail behavior.
+- Architecture-level fix improved diagnosis, but did not convert native rail into a stable product behavior in sidebar iframe mode.
+
+#### Product Decision
+- Restored the previously stable custom Claude fallback helper as active behavior.
+- Kept investigation outcomes documented in `WORKLOG.md` and `TROUBLESHOOTING.md` for future attempts.
+
 ## [7.0] — 2026-02-09
 
 ### Initial Extension Release

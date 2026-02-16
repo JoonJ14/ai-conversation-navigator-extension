@@ -137,7 +137,8 @@
     background: #252525 !important;
     border-radius: 6px !important;
     cursor: pointer !important;
-    border-left: 3px solid #d97706 !important;
+    border-left-width: 3px !important;
+    border-left-style: solid !important;
     transition: all 0.15s ease !important;
 }
 
@@ -171,9 +172,9 @@
     line-height: 1.6 !important;
 }
 
-/* Highlight animation when scrolling to a message */
+/* Highlight animation when scrolling to a message — color set by theme JS */
 @keyframes ai-nav-highlight {
-    0% { outline: 3px solid #d97706; outline-offset: 4px; }
+    0% { outline-offset: 4px; }
     100% { outline: 3px solid transparent; outline-offset: 4px; }
 }
 
@@ -231,4 +232,39 @@
 .ai-nav-in-sidebar #ai-nav-stats {
     padding: 6px 10px !important;
     font-size: 10px !important;
+}
+
+/* === CLAUDE SIDEBAR HELPER (sidebar iframe mode) === */
+/* React unmounts the <nav> at ~1.2s. We clone it before removal and
+   show our persistent copy as a fixed overlay when ☰ is clicked. */
+
+#ai-claude-sidebar-btn {
+    position: fixed !important;
+    top: 10px !important;
+    left: 10px !important;
+    z-index: 2147483645 !important;
+    background: rgba(42, 42, 42, 0.95) !important;
+    color: #ccc !important;
+    border: 1px solid #555 !important;
+    border-radius: 8px !important;
+    width: 34px !important;
+    height: 34px !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+#ai-claude-sidebar-btn:hover {
+    background: rgba(60, 60, 60, 0.95) !important;
+    color: #fff !important;
+    border-color: #777 !important;
 }

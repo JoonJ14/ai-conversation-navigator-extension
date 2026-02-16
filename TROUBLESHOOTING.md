@@ -12,6 +12,7 @@ This document records every issue encountered, every approach tried, and every f
 4. [Gemini Trusted Types / CSP Issues](#4-gemini-trusted-types--csp-issues)
 5. [Content Script Injection in Iframes](#5-content-script-injection-in-iframes)
 6. [Platform-Specific Selector Issues](#6-platform-specific-selector-issues)
+7. [2026-02-13 Native Claude Sidebar Deep Dive](#7-2026-02-13-native-claude-sidebar-deep-dive)
 
 ---
 
@@ -276,18 +277,192 @@ After exhausting all override approaches, we decided to **remove ALL Claude-spec
 4. The "New Chat" and "Open in Tab" toolbar buttons provide adequate workarounds
 5. Future investigation should focus on the toggle button approach rather than forcing the sidebar open
 
+### Approach 9: Standalone Sidebar Toggle Button (Hamburger Menu)
+
+**Idea:** Since Claude enters mobile/narrow mode in our iframe, replicate what Claude does on mobile — provide a hamburger button (☰) that, when clicked, triggers Claude's own sidebar to slide out as an overlay.
+
+**Investigation:** We discovered that Claude's narrow-viewport behavior involves:
+1. The sidebar (`<nav>`) is still in the DOM but invisible (collapsed to 0px via CSS positioning)
+2. Claude has a hamburger toggle button somewhere in the header, but it's a React-controlled component
+3. The toggle button's click handler is a React synthetic event — not a native DOM event listener
+
+**First attempt — Click the original toggle button programmatically:**
+We searched for Claude's native toggle button using selectors like `button[aria-label*="menu"]`, `button[aria-label*="sidebar"]`, `[data-testid*="toggle"]`, and SVG icon analysis. Even when found, calling `.click()` or dispatching `MouseEvent` on these buttons did nothing because React's synthetic event system doesn't respond to programmatic DOM events — React attaches a single delegated listener at the root and routes events through its internal fiber tree.
+
+**Second attempt — Inject our own ☰ button that opens the nav:**
+Created a fixed-position hamburger button that, when clicked, would find the `<nav>` element and force it visible with inline styles (`display:flex`, `width:260px`, `position:fixed`, etc.).
+
+**Result:** ⚠️ Partial. The button appeared and the nav became visually visible, but it was an empty shell. The nav's internal content (chat history list, "New Chat" button, settings, etc.) is populated by React state. Simply making the nav visible didn't trigger React to populate its children — we got a visible but empty sidebar.
+
+**Learning:** Claude's sidebar is not just hidden via CSS — its content is conditionally rendered by React based on internal state. Making the container visible doesn't make React render its children.
+
+### Approach 10: Clone the Nav DOM
+
+**Idea:** Claude's sidebar `<nav>` IS briefly visible and fully populated for ~1.2 seconds when the page first loads (before Claude's responsive JS kicks in and collapses it). During that window, clone the entire nav DOM tree and store it. Then inject the clone as our own fixed sidebar when the user clicks the ☰ button.
+
+**Implementation:**
+```javascript
+function captureNav() {
+    var nav = document.querySelector('nav');
+    if (nav && !clonedNav) {
+        clonedNav = nav.cloneNode(true);
+        clonedNav.id = 'ai-claude-nav-clone';
+    }
+}
+```
+
+A `MutationObserver` watched for the nav to appear and captured it immediately. When the ☰ button was clicked, a fresh `cloneNode(true)` of the stored clone was injected as a fixed sidebar overlay.
+
+**Extensive cleanup was needed on the clone:**
+1. **Removed invisible overlay divs** — Claude had `div.absolute.inset-0.cursor-pointer` elements that sat on top of links, intercepting all clicks
+2. **Fixed positioning** — All elements with `fixed` or `absolute` Tailwind classes were changed to `position: relative` to prevent them from flying off-screen in our overlay context
+3. **Forced visibility** — Set `visibility: visible` and `opacity: 1` on all descendant elements
+4. **Boosted link clickability** — Set `pointer-events: auto`, `cursor: pointer`, `position: relative`, and `z-index: 10` on all `<a>` tags
+5. **Made buttons clickable** — Same treatment for all `<button>` elements
+
+**Result:** ⚠️ Visual success, functional failure. The cloned sidebar looked **pixel-perfect** — identical to Claude's native sidebar with all chat history items, icons, "New Chat" button, settings area, and user profile section. However, **none of the buttons or links worked.** Clicking them did absolutely nothing.
+
+**Root cause of the click failure:**
+
+The cloned DOM elements retained all their original CSS classes (Tailwind utility classes), which meant Claude's own stylesheets continued to apply to them. These stylesheets included rules that:
+- Set `pointer-events: none` on certain wrapper elements
+- Applied `overflow: hidden` on containers that clipped clickable areas
+- Used complex `z-index` stacking that placed invisible elements above links
+- Had pseudo-elements (`::before`, `::after`) covering interactive areas
+
+Even our aggressive cleanup (removing overlays, forcing pointer-events, boosting z-index) couldn't overcome the sheer volume of interfering CSS rules. Claude's Tailwind build produces thousands of utility classes, and any one of them could re-establish a click-blocking layer.
+
+Additionally, for `<a>` tags: while they had real `href` attributes (like `/new`, `/recents`, `/projects`), the Tailwind CSS rules were preventing the browser from recognizing them as clickable targets. The click events were being captured by parent elements styled with cursor/pointer rules before they could reach the actual `<a>` tag.
+
+For `<button>` elements: these had **no `href`** — their functionality lived entirely in React synthetic event handlers, which are NOT copied by `cloneNode()`. Even if clicks had reached them, there was no handler to execute.
+
+**Key technical insight:** `cloneNode(true)` performs a deep clone of the DOM tree — it copies:
+- ✅ HTML structure
+- ✅ Attributes (class, id, href, data-*, etc.)
+- ✅ Inline styles
+- ✅ Text content
+
+But it does NOT copy:
+- ❌ JavaScript event listeners (addEventListener)
+- ❌ React synthetic event handlers (stored in React's fiber tree, not on DOM nodes)
+- ❌ React component state
+- ❌ React context (router, auth, theme)
+- ❌ Closure references from original event handler functions
+
+This means the clone is a **dead visual copy** — it looks right but has no behavior.
+
+**Learning:**
+1. **DOM cloning copies structure, not behavior.** A cloned React app is a corpse — it looks alive but nothing works.
+2. **Tailwind CSS is pervasive.** When you clone elements with Tailwind classes, you inherit thousands of CSS rules you can't easily override. Inline `!important` styles only win against specific properties — you'd need to override every single interfering rule.
+3. **Claude's CSS has many layers of click interception.** Overlay divs, pseudo-elements, z-index stacking, pointer-events cascading — removing one layer just reveals the next.
+4. **The 1.2-second capture window works reliably.** `MutationObserver` + `cloneNode` consistently captured the nav with all its content. The timing is not the problem — the clone's usability is.
+
+### Approach 11: Custom Sidebar UI from Extracted Link Data (Current Working Approach)
+
+**Idea:** Instead of cloning Claude's DOM (which brings all the CSS baggage and dead event handlers), extract just the **link data** (href + text) from the nav during the 1.2-second window, then build our own clean sidebar UI from scratch using simple HTML elements with pure inline styles.
+
+**Implementation:**
+```javascript
+function captureNavLinks() {
+    var nav = document.querySelector('nav');
+    if (nav && !navLinks) {
+        navLinks = [];
+        var links = nav.querySelectorAll('a');
+        for (var i = 0; i < links.length; i++) {
+            var href = links[i].getAttribute('href') || '';
+            var text = (links[i].textContent || '').trim();
+            if (href && (href.startsWith('/') || href.startsWith('http'))) {
+                navLinks.push({ href: href, text: text });
+            }
+        }
+    }
+}
+```
+
+When the ☰ button is clicked, we build a completely new sidebar from scratch:
+- `document.createElement('div')` for the panel
+- `document.createElement('a')` for each link, with `href` set from extracted data
+- Pure inline styles (no Tailwind classes, no Claude CSS interference)
+- Our own hover effects via `onmouseover`/`onmouseout`
+- Backdrop overlay that closes the sidebar on click
+- Links close the sidebar after navigation
+
+**Result:** ✅ **Working.** All navigation links are fully clickable and navigate correctly to Claude's pages (`/new`, `/recents`, `/projects`, etc.). The sidebar opens and closes smoothly. No CSS conflicts, no dead event handlers.
+
+**Why this approach works:**
+
+1. **Zero CSS inheritance.** Our elements have no Tailwind classes, so none of Claude's thousands of CSS rules apply. Every style is an inline style we control.
+2. **Real `<a>` tags with real `href`s.** Browser-native link behavior — no React needed. Clicking navigates the page using standard browser navigation.
+3. **No dead event handlers.** We don't clone handlers we can't use. Our sidebar has its own simple event handlers that we define.
+4. **Stable contract.** Claude's URL routes (`/new`, `/recents`, `/projects`) are part of their app architecture and rarely change. Visual CSS classes change frequently, but URL paths are stable because they'd break bookmarks, shared links, and SEO.
+5. **Full control.** We can style the sidebar however we want, add our own icons, hover effects, and interactions without fighting inherited styles.
+
+**Current limitations (planned for future polish):**
+- Visual design doesn't match Claude's native sidebar yet (different fonts, no icons/emojis, no Claude logo)
+- Missing profile/settings button at the bottom (these are React-state-driven, no URL)
+- Hover states are simple color changes rather than Claude's subtle animations
+
+**Learning:**
+1. **Data extraction > DOM cloning** for cross-framework interop. Take the data, build your own UI.
+2. **URLs are the stable interface** between a web app's frontend and its functionality. CSS classes, DOM structure, and React state are all implementation details that change frequently.
+3. **Inline styles on fresh elements are immune to external CSS.** This is the cleanest way to inject UI into a page with complex existing stylesheets.
+4. **The 1.2-second nav capture window is reliable** — it works for both DOM cloning (Approach 10) and data extraction (this approach).
+
+### Approach 12: Architecture-Level Wide Viewport Virtualization (Final Retry)
+
+**Context for this final retry (cross-session review):**
+
+After two prior sessions (Claude agent and Codex medium depth) focused mainly on selector matching, toggle clicking, state reconciliation, and visibility forcing, we did a full high-depth pass over all logs and failures. The key observation was that many attempts were still **DOM surgery inside Claude's app tree**, while the recurring symptom was structural:
+- the native rail appears briefly,
+- then retracts/collapses during or after hydration,
+- and button/state signals often disagree with what is actually visible.
+
+This suggested we were likely missing a **host architecture layer** issue (iframe viewport and container geometry), not just missing one more selector.
+
+**Hypothesis:**
+
+Claude's layout mode might be decided from effective viewport/container conditions across hydration phases. If we keep the Claude iframe itself in a desktop-width layout and only clip/pan at the extension container level, Claude may keep native rail behavior without us mutating Claude DOM/state.
+
+**Parent-level architecture fix attempted:**
+- Added a `frame-wrapper` clipping container in `sidebar.html`.
+- Set Claude iframe to a wide virtual viewport (`1024px+`) so desktop layout conditions stay true.
+- Added explicit `Rail / Split / Chat` mode controls in extension chrome (outside Claude DOM).
+- Switched views by horizontal panning/offsets rather than forcing Claude node styles/classes.
+- Named/scoped iframe context so sidebar-only logic targets only the extension Claude frame.
+- Disabled custom Claude fallback helper during wide-mode runs to avoid mixed-control interference.
+
+**Why this looked promising:**
+1. It removed dependence on fragile in-app selectors and React timing.
+2. It moved control to extension-owned parent layers, where we have deterministic ownership.
+3. It directly targeted the gap seen in prior sessions: architecture/viewport behavior instead of component-level patches.
+
+**Observed test results:**
+- Native rail could still appear first, then retract/collapse after Claude hydration.
+- `Rail / Split / Chat` controls mostly changed visible horizontal region but did not produce durable native rail interaction.
+- In some runs, controls affected framing while native toggle/rail state still desynced from visible UI.
+
+**Result:** ❌ Not reliable in practice. Architecture-level virtualization improved diagnosis and eliminated some false selector paths, but still did not produce stable native rail persistence.
+
+**Final learning from this retry:**
+
+Even when DOM surgery is removed, app-controlled rerender/state transitions can still retract the rail in iframe mode. This confirms the limitation is deeper than selector quality and supports the product decision to keep the custom Claude sidebar fallback as the dependable path.
+
 ### Summary of Approaches
 
-| # | Approach | Technique | Result | Why It Failed |
-|---|---------|-----------|--------|---------------|
+| # | Approach | Technique | Result | Why It Failed / Succeeded |
+|---|---------|-----------|--------|---------------------------|
 | 1 | JS viewport spoofing | Override `innerWidth`, `matchMedia` | ❌ | CSS @media uses real viewport, not JS values |
 | 2 | Iframe detection spoofing | Override `window.top`, `Sec-Fetch-Dest` | ❌ | Sidebar collapse is CSS-based, not iframe-detection |
 | 3 | filterResponseData injection | Modify HTML before browser parses it | ❌ | Broke page loading (stream buffering issues) |
 | 4 | JS width forcing | `MutationObserver` + inline styles | ⚠️ Partial | React re-renders override inline styles |
 | 5 | CSS !important overrides | Target exact Tailwind classes | ⚠️ Partial | Computed styles blank in content script context |
 | 6 | Wide iframe + CSS scale | 1280px iframe scaled down | ❌ | Content too small to read/interact with |
-| 7 | Diagnostic approach | Catalog Claude's mobile UI | 🔍 Ongoing | Investigating toggle button visibility |
+| 7 | Diagnostic approach | Catalog Claude's mobile UI | 🔍 Research | Investigating toggle button visibility |
 | 8 | Clean slate | Remove all hacks | ✅ Shipped | Accept mobile mode, focus on core functionality |
+| 9 | Standalone toggle button | Inject ☰ to trigger native sidebar | ⚠️ Partial | Nav visible but empty — React doesn't render children |
+| 10 | Clone the nav DOM | Deep clone during 1.2s window | ⚠️ Visual only | Looks perfect but clicks dead — Tailwind CSS blocks + no React handlers |
+| 11 | Custom UI from extracted links | Extract href/text, build own sidebar | ✅ Working | Clean elements, no CSS conflicts, real `<a>` navigation |
+| 12 | Wide viewport virtualization | 1024px iframe + Rail/Split/Chat panning | ❌ | Rail still retracts after hydration; not stable enough |
 
 ### Key Technical Learnings
 
@@ -299,6 +474,12 @@ After exhausting all override approaches, we decided to **remove ALL Claude-spec
 6. **CSS `!important` from content scripts beats Tailwind utilities**, but loses to React inline style recalculations.
 7. **`filterResponseData` buffers the entire response.** This breaks streaming/progressive page loads.
 8. **The simplest approach is often best.** Accepting platform limitations and providing workarounds is more maintainable than fighting them.
+9. **`cloneNode(true)` copies DOM structure but NOT JavaScript behavior.** React synthetic event handlers, component state, context, and closure-based listeners are all lost. A cloned React UI is visually accurate but functionally dead.
+10. **Tailwind CSS makes cloned elements hostile.** Thousands of utility class rules continue to apply to cloned elements, creating layers of click-blocking behavior (pointer-events, z-index stacking, pseudo-elements, overflow clipping) that are nearly impossible to fully override.
+11. **Data extraction beats DOM cloning for cross-framework interop.** Extract the stable data (URLs, text), discard the framework-specific DOM, and build your own clean UI.
+12. **URL routes are a web app's most stable contract.** They change far less often than CSS classes, DOM structure, or component internals because they affect bookmarks, shared links, and SEO.
+13. **Inline styles on freshly created elements are immune to external CSS interference.** This is the most reliable way to inject interactive UI into pages with complex existing stylesheets.
+14. **Architecture-level viewport tricks help diagnosis but still lose to app-controlled rerender/state if the app retracts UI after hydration.**
 
 ---
 
@@ -461,6 +642,59 @@ ChatGPT uses reliable data attributes (`data-message-author-role="user"`) that h
 ### Claude: Data-testid Attribute
 
 Claude uses `data-testid="user-human-turn"` which has been stable. This is a semantic test identifier that Claude likely maintains for their own testing, making it relatively reliable.
+
+---
+
+## 7. 2026-02-13 Native Claude Sidebar Deep Dive
+
+This section documents a dedicated follow-up investigation focused specifically on forcing Claude's native in-chat sidebar to remain stable in the extension iframe.
+
+### Goal
+
+Use Claude's native sidebar toggle behavior directly (no custom sidebar clone) so the extension view matches Claude web behavior.
+
+### What was validated
+
+- In some runs, Claude exposes a native toggle with:
+  - `data-testid="pin-sidebar-toggle"`
+  - `aria-label` toggling between `"Open sidebar"` and `"Close sidebar"`
+- In some runs, a left rail `<nav>` exists with expected sidebar dimensions.
+- However, these native elements are not consistently available at click-time, and visual persistence is unstable after hydration/rerender.
+
+### Approaches tried (2026-02-13)
+
+1. Native toggle targeting by selector priority
+- Targeted `pin-sidebar-toggle` first, with aria/data-testid/class fallbacks.
+- Excluded known false matches such as Claude composer/user-menu controls.
+
+2. State reconciliation and auto-triggering
+- Compared `aria` state (`Open sidebar` / `Close sidebar`) against actual on-screen rail state.
+- Triggered native toggle attempts to repair mismatches.
+
+3. Visibility and hit-test verification
+- Changed visibility check to require `elementFromPoint` hit-testing in left rail area.
+- This avoided false positives where rail existed in DOM but was not actually visible on screen.
+
+4. Frame-context hardening
+- Scoped sidebar-mode logic to the extension iframe context.
+- Logged frame depth and main-doc heuristics to reduce false frame hits.
+
+5. Deep DOM search and fallback bridge
+- Added deep query logic for shadow/descendant trees to find native controls at click-time.
+- Built a bridge button that triggers native toggle when found.
+- Added fallback navigation attempts for history access.
+
+### Observed failure pattern
+
+- Native sidebar/toggle may flash briefly and then disappear.
+- Controls can exist in logs while not being reliably represented in the visible extension viewport.
+- Selector correctness alone did not make behavior durable because Claude rerender timing/state in iframe mode keeps invalidating assumptions.
+
+### Decision
+
+For now, native in-chat sidebar persistence in Claude iframe mode is treated as non-reliable.
+
+Active path is to keep the custom Claude fallback helper (stable custom sidebar behavior), and preserve this investigation for future retries.
 
 ---
 
